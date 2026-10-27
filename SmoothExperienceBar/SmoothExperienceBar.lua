@@ -190,10 +190,14 @@ gripTex:SetVertexColor(0.8, 0.8, 0.8)
 grip:SetScript("OnEnter", function() gripTex:SetVertexColor(1, 0.9, 0.4) end)
 grip:SetScript("OnLeave", function() gripTex:SetVertexColor(0.8, 0.8, 0.8) end)
 
-local function Place(tex, x, w)
+-- back, if given, stretches the segment left to there; it stays under the liquid until the front dips.
+local function Place(tex, x, w, back)
     if w < 0.5 then
         tex:Hide()
         return
+    end
+    if back and back < x then
+        x, w = back, w + x - back
     end
     tex:SetPoint("TOPLEFT", x, 0)
     tex:SetPoint("BOTTOMLEFT", x, 0)
@@ -403,12 +407,15 @@ end
 
 local function RenderBar()
     local fillW = A.fill * barWidth
-    Place(leadTex, fillW, (A.lead - A.fill) * barWidth)
+    -- When the front sloshes back, the segment after the fill shows there instead of the empty bar.
+    local back = liquid:Back()
+    Place(leadTex, fillW, (A.lead - A.fill) * barWidth, back)
 
     -- Overlays sit after the fill and clip at the bar end.
     local questW = min(A.quest, 1 - A.fill) * barWidth
-    Place(questTex, fillW, questW)
-    Place(restedTex, fillW + questW, min(A.rested, max(0, 1 - A.fill - A.quest)) * barWidth)
+    Place(questTex, fillW, questW, back)
+    Place(restedTex, fillW + questW, min(A.rested, max(0, 1 - A.fill - A.quest)) * barWidth,
+        questW < 0.5 and back or nil)
 
     flash:SetAlpha(A.flash * 0.35)
     RenderText()
@@ -419,14 +426,15 @@ local function StepFill(dt)
     local wrapping = A.wraps > 0
     local target = FillTarget()
 
-    if A.hold > 0 then
+    -- Several pending level-ups speed the sweep up so it never feels stuck.
+    -- Slow themes still sweep through a level-up at normal speed so it never crawls.
+    local themeSpeed = theme.fillSpeed or 1
+    if wrapping then themeSpeed = max(1, themeSpeed) end
+    local rate = ANIM.rate * db.speed * themeSpeed * (1 + max(0, A.wraps - 1) * 0.5)
+    local held = A.hold > 0
+    if held then
         A.hold = A.hold - dt
     else
-        -- Several pending level-ups speed the sweep up so it never feels stuck.
-        -- Slow themes still sweep through a level-up at normal speed so it never crawls.
-        local themeSpeed = theme.fillSpeed or 1
-        if wrapping then themeSpeed = max(1, themeSpeed) end
-        local rate = ANIM.rate * db.speed * themeSpeed * (1 + max(0, A.wraps - 1) * 0.5)
         A.fill = Approach(A.fill, wrapping and 1 + ANIM.overshoot or target, dt, rate)
     end
 
@@ -456,7 +464,10 @@ local function StepFill(dt)
     else
         A.quest = Approach(A.quest, questTarget, dt, ANIM.rate * db.speed)
     end
-    A.rested = Approach(A.rested, wrapping and 0 or T.rested / T.max, dt, ANIM.rate * db.speed)
+    -- Rested waits and moves with the fill, so its far end never backs up before the fill arrives.
+    if not held then
+        A.rested = Approach(A.rested, wrapping and 0 or T.rested / T.max, dt, rate)
+    end
     if A.flash > 0 then A.flash = max(0, A.flash - dt / ANIM.flash) end
 
     if not wrapping and A.hold <= 0 and A.fill == target and A.flash == 0

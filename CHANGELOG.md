@@ -6,6 +6,14 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.0.1
+
+### Fixed
+- A dark gap no longer flickers in front of the liquid while it flows into
+  completed quest XP or rested XP after a big gain.
+- The end of the rested XP no longer twitches backwards before the liquid
+  starts to flow.
+
 ## 1.0.0
 
 ### New

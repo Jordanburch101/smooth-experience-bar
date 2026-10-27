@@ -150,7 +150,7 @@ function Liquid.New(parent, width, height, theme, opts)
 
     self.gradA, self.gradB, self.gradC = CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1)
     self.t, self.acc, self.energy, self.fizzAcc = 0, 0, 0, 0
-    self.edge, self.speed = 0, 0
+    self.edge, self.speed, self.back = 0, 0, 0
     self.uA, self.vA, self.uB, self.vB = 0, 0, 0.37, 0
     self.ambientAcc = {}
     self.rested = false
@@ -245,7 +245,12 @@ end
 
 -- Jump the front without sloshing, e.g. on load or when a level wraps back to 0.
 function Liquid:Snap(edge)
-    self.edge, self.speed = edge, 0
+    self.edge, self.speed, self.back = edge, 0, edge
+end
+
+-- How far back the front reaches this frame; it can dip behind the edge while sloshing.
+function Liquid:Back()
+    return self.back
 end
 
 -- Colours for burst motes; themes with animated colours tint them with the current accent.
@@ -594,11 +599,12 @@ function Liquid:Draw(dt)
 
     local wobble = opts.waves and self.phys.ambient * (0.6 + energy) or 0
     local tipAlpha = 0.25 + 0.5 * min(1, energy)
-    local rowH = self.rowH
+    local rowH, back = self.rowH, edge
     for i = 1, CFG.rows do
         local row, tip = self.rows[i], self.tips[i]
         local off = self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))
         local right = min(w, edge + off)
+        if right < back then back = right end
         local rw = right - base
         if edge < 0.5 or rw < 0.5 then
             row:Hide()
@@ -619,9 +625,11 @@ function Liquid:Draw(dt)
         end
     end
 
+    self.back = max(0, back)
+
     -- Magic veins drift with the theme's flow; faster and brighter with energy and fill speed.
     local sw = self.swirl
-    local swirlW = max(0, edge - amp * 0.5)
+    local swirlW = max(0, min(edge - amp * 0.5, self.back))
     if swirlW >= 1 and opts.swirl then
         local flow = 0.015 + 0.12 * energy + max(0, self.speed) / 2000
         local fu, fv = sw.flow[1], sw.flow[2]
