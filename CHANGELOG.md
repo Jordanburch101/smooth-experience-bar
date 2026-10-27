@@ -11,6 +11,9 @@ broken and now works. Leave out internal changes. Sections are
 ### New
 - The front of the liquid is smoother, with a soft glowing edge instead of
   a hard stepped line, and the magic inside reaches right up to it.
+- The liquid pours more naturally: it eases into motion instead of jumping
+  to full speed, and keeps flowing when several kills land in a row
+  instead of pausing on each one.
 
 ### Fixed
 - A dark gap no longer flickers in front of the liquid while it flows into

@@ -18,6 +18,7 @@ local LAYOUT_VERSION = 2 -- bump to reset saved positions when the layout change
 
 local ANIM = {
     rate      = 6,      -- exponential approach rate, higher = snappier
+    spring    = 1.7,    -- the fill and rested pour on a spring this many times the rate
     hold      = 0.20,   -- seconds the gain highlight shows before the fill chases it
     overshoot = 0.04,   -- aim past 100% on level-up so the ease-out does not crawl into the wrap
     epsilon   = 0.0005, -- snap threshold, in bar fractions
@@ -361,7 +362,8 @@ end
 --------------------------------------------------------------------------------
 
 -- Displayed state (A) chases target state (T). All bar values are fractions of the displayed level.
-local A = { ready = false, fill = 0, lead = 0, quest = 0, rested = 0, wraps = 0, hold = 0, flash = 0, level = 0, maxXP = 1 }
+local A = { ready = false, fill = 0, lead = 0, quest = 0, rested = 0, wraps = 0, hold = 0, flash = 0, level = 0, maxXP = 1,
+            fillVel = 0, restedVel = 0 }
 local animating, idleAcc = false, 0
 local T = { level = 0, cur = 0, max = 1, quest = 0, rested = 0 }
 
@@ -369,6 +371,18 @@ local function Approach(cur, target, dt, rate)
     local d = target - cur
     if abs(d) < ANIM.epsilon then return target end
     return cur + d * (1 - exp(-rate * dt))
+end
+
+-- Critically damped spring, exact for any dt: from rest it speeds up, then eases in without
+-- overshooting. Returns the new value and velocity.
+local function Spring(cur, vel, target, dt, w)
+    local e = cur - target
+    if abs(e) < ANIM.epsilon and abs(vel) < ANIM.epsilon * w then return target, 0 end
+    local k = exp(-w * dt)
+    local push = (vel + w * e) * dt
+    local e2 = (e + push) * k
+    if e2 * e < 0 then return target, 0 end -- a retarget can carry it past; stop there instead
+    return target + e2, (vel - w * push) * k
 end
 
 local function FillTarget()
@@ -431,17 +445,19 @@ local function StepFill(dt)
     local themeSpeed = theme.fillSpeed or 1
     if wrapping then themeSpeed = max(1, themeSpeed) end
     local rate = ANIM.rate * db.speed * themeSpeed * (1 + max(0, A.wraps - 1) * 0.5)
+    local w = rate * ANIM.spring
     local held = A.hold > 0
     if held then
         A.hold = A.hold - dt
     else
-        A.fill = Approach(A.fill, wrapping and 1 + ANIM.overshoot or target, dt, rate)
+        A.fill, A.fillVel = Spring(A.fill, A.fillVel, wrapping and 1 + ANIM.overshoot or target, dt, w)
     end
 
     if wrapping and A.fill >= 1 then
         A.wraps = A.wraps - 1
         A.level = A.level + 1
         A.fill, A.flash, A.pourEnd = 0, db.flash and 1 or 0, nil
+        A.fillVel, A.restedVel = 0, 0
         if A.wraps == 0 then
             A.level, A.maxXP = T.level, T.max
         end
@@ -464,9 +480,9 @@ local function StepFill(dt)
     else
         A.quest = Approach(A.quest, questTarget, dt, ANIM.rate * db.speed)
     end
-    -- Rested waits and moves with the fill, so its far end never backs up before the fill arrives.
+    -- Rested waits and pours on the same spring as the fill, so its far end never backs up.
     if not held then
-        A.rested = Approach(A.rested, wrapping and 0 or T.rested / T.max, dt, rate)
+        A.rested, A.restedVel = Spring(A.rested, A.restedVel, wrapping and 0 or T.rested / T.max, dt, w)
     end
     if A.flash > 0 then A.flash = max(0, A.flash - dt / ANIM.flash) end
 
@@ -513,6 +529,7 @@ local function Refresh()
         T.level, T.cur, T.max, T.quest, T.rested = level, cur, mx, quest, rested
         A.level, A.maxXP, A.wraps, A.hold, A.flash = level, mx, 0, 0, 0
         A.fill, A.quest, A.rested = cur / mx, quest / mx, rested / mx
+        A.fillVel, A.restedVel = 0, 0
         A.lead = A.fill
         A.ready, animating, A.pourEnd = true, false, nil
         liquid:Snap(A.fill * barWidth)
@@ -542,7 +559,8 @@ local function Refresh()
     local target = FillTarget()
     if target > A.lead + ANIM.epsilon then
         A.lead = target
-        A.hold = ANIM.hold
+        -- Already pouring: carry on toward the new target rather than stopping dead to show it.
+        if A.fillVel == 0 then A.hold = ANIM.hold end
     elseif target < A.lead then
         A.lead = max(target, A.fill)
     end
