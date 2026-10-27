@@ -1,43 +1,100 @@
+<p align="center"><img src="branding/gallery/hero.gif" alt="Smooth Experience Bar: an experience bar whose fill flows like liquid as XP is gained, a quest is turned in and the character levels up"></p>
+
+<p align="center">
+  <a href="https://www.curseforge.com/wow/addons/smooth-experience-bar">Get the addon</a> ·
+  <a href="branding/gallery">Screenshots</a>
+</p>
+
 # Smooth Experience Bar
 
-Lightweight World of Warcraft experience bar (TBC Anniversary, Interface 20506). Layout follows the
-Luxthos Experience Bar WeakAura; the fill is an animated liquid that reacts to XP gains, quest turn-ins and
-level-ups.
+A lightweight standalone take on the
+[Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura, with quest and rested XP, session
+stats and optional themes. No WeakAuras required.
 
-## Layout
+Works on **WoW Classic Era**, **TBC Anniversary** and **WoW Forever**.
 
-- `SmoothExperienceBar/` - the addon (junctioned into `_anniversary_\Interface\AddOns`)
-  - `Themes.lua` - theme registry and the default theme
-  - `Liquid.lua` - liquid front simulation, swirl, bubbles and motes
-  - `SmoothExperienceBar.lua` - data, events, text, fill animation, slash commands
-  - `Options.lua` - settings page (Options > AddOns > Smooth Experience Bar)
-  - `Media/` - generated textures
-- `tools/make_media.py` - regenerates `Media/*.tga`
-- `tools/harness/` - WoW API mock for running the addon outside the game
+![Quest turn-in in three steps: completed quest XP waiting in orange, the liquid taking it in, and all of it banked](branding/gallery/turn-in.png)
 
-## In game
+## What it shows
 
-`/seb` opens the settings page. Other commands:
+- **Everything at a glance:** level, current / max XP with XP remaining, and percentage, including what your
+  completed quests will bring you to.
+- **Completed quest XP:** a separate segment for the XP waiting in your quest log, ready to turn in.
+- **Rested XP:** its own segment and a percentage.
+- **Session stats:** time this level, time this session, XP per hour and an estimated time to level.
+- **Max level:** hide the bar, or keep it as a full bar showing total time played.
 
-```
-/seb unlock | lock | reset
-/seb session
-/seb test [xp] | level | multi | quest | turnin | rested | off
-```
+## Lightweight
+
+- Standalone: no libraries and no WeakAuras.
+- Only updates when something changes; once the bar settles it drops to a low update rate.
+- Every visual effect can be switched off on its own for a clean, static bar.
+
+## Make it yours
+
+Open the settings with `/seb`, by right-clicking the bar, or from Options > AddOns > Smooth Experience Bar.
+
+- Unlock to drag the bar anywhere and resize it from the corner, or set width, height and scale exactly.
+- Toggle each line of text, or hide the default experience bar.
+- Change the fill speed, or switch the liquid waves, swirl, bubbles, sparkles, ambient particles and level-up
+  flash on and off.
+- Preview XP gains, quest turn-ins and level-ups without touching your real XP.
+
+![Fire, Frost, Honey, Lava, Cosmic, Nature and Void effect themes, each with its own particles](branding/gallery/effects.png)
 
 ## Themes
 
-25 themes ship in `Themes.lua`:
+The default theme matches the original WeakAura. 24 more are optional:
 
-- Default: Luxthos
-- Smart: Class Color, Faction, Item Quality (changes colour as the bar fills), Prismatic (cycles hue)
-- Colour: Arcane, Fel, Holy, Blood, Ember, Tidal, Plague, Midnight, Sunset
-- Outland zones: Zangarmarsh, Netherstorm, Hellfire, Nagrand
-- Effects: Fire, Frost, Honey, Lava, Cosmic, Nature, Void. These also change physics, swirl texture and
-  particles.
+- **Smart:** Class Color, Faction, Item Quality (changes colour as the bar fills) and Prismatic
+- **Colour:** Arcane, Fel, Holy, Blood, Ember, Tidal, Plague, Midnight and Sunset
+- **Outland:** Zangarmarsh, Netherstorm, Hellfire and Nagrand
+- **Effects:** Fire, Frost, Honey, Lava, Cosmic, Nature and Void, each with its own particles and liquid feel
 
-Register a theme in `Themes.lua`. Only the fields that differ from the default theme are needed; it then
-appears in the Theme dropdown. The comment at the top of `Themes.lua` lists everything a theme can set.
+## Commands
+
+| Command | |
+|---|---|
+| `/seb` | Open settings |
+| `/seb lock` / `/seb unlock` | Lock or unlock moving and resizing |
+| `/seb reset` | Reset position and size |
+| `/seb session` | Reset session time and XP/hour |
+| `/seb test` | Preview an XP gain (also `level`, `multi`, `quest`, `turnin`, `rested`, `off`) |
+
+## Credits
+
+Layout and design are based on the [Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura by
+Luxthos & Daemoos. Smooth Experience Bar is not affiliated with or endorsed by Blizzard Entertainment.
+
+---
+
+## Development
+
+| Folder | What it is |
+|---|---|
+| `SmoothExperienceBar/` | The addon. `Themes.lua` holds the themes, `Liquid.lua` the liquid, `Options.lua` the settings page |
+| `tools/make_media.py` | Generates the textures in `SmoothExperienceBar/Media/` |
+| `tools/harness/` | A WoW API mock that runs the addon outside the game: tests, previews and the gallery |
+| `branding/` | Icon, gallery screenshots and the backdrop they are drawn on; see its README |
+
+To try the source in game, link or copy `SmoothExperienceBar/` into
+`World of Warcraft/<_classic_era_ | _anniversary_ | _forever_>/Interface/AddOns/`.
+
+```powershell
+python -m venv tools/venv
+tools/venv/Scripts/python -m pip install lupa numpy pillow
+
+python tools/make_media.py SmoothExperienceBar/Media                                       # textures
+tools/venv/Scripts/python tools/harness/slash_test.py SmoothExperienceBar                  # tests
+tools/venv/Scripts/python tools/harness/run.py SmoothExperienceBar preview theme=fel       # preview.gif + sheet.png
+tools/venv/Scripts/python tools/harness/probe.py SmoothExperienceBar cosmic                # live particle counts
+tools/venv/Scripts/python tools/harness/gallery.py SmoothExperienceBar branding/gallery branding/gallery-backdrop.jpg
+```
+
+### Adding a theme
+
+Register it in `Themes.lua`. Only the fields that differ from the default theme are needed; the comment at
+the top of `Themes.lua` lists everything a theme can set.
 
 ```lua
 Themes.Register("toxic", {
@@ -48,17 +105,4 @@ Themes.Register("toxic", {
     burst = { texture = "Ember", buoyancy = 40 },          -- rising sparks on XP gains
     ambient = { { area = "surface", rate = 2, texture = "Glow", size = { 6, 10 }, vy = { 8, 16 } } },
 })
-```
-
-## Tools
-
-```
-python -m venv tools/venv
-tools/venv/Scripts/python -m pip install lupa numpy pillow
-
-python tools/make_media.py SmoothExperienceBar/Media
-tools/venv/Scripts/python tools/harness/run.py SmoothExperienceBar preview      # preview.gif + sheet.png
-tools/venv/Scripts/python tools/harness/run.py SmoothExperienceBar preview theme=fel width=800 height=48
-tools/venv/Scripts/python tools/harness/slash_test.py SmoothExperienceBar       # commands, settings, themes
-tools/venv/Scripts/python tools/harness/probe.py SmoothExperienceBar cosmic     # live particle counts
 ```
