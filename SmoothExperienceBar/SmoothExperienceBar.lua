@@ -270,9 +270,16 @@ local function ResetSession()
     cdb.maxXP = UnitXPMax("player")
 end
 
+local function RestoreChatFrames()
+    for cf in pairs(mutedChatFrames) do
+        cf:RegisterEvent("TIME_PLAYED_MSG")
+    end
+    wipe(mutedChatFrames)
+end
+
 -- Ask for /played without printing it to chat.
 local function RequestPlayed()
-    if requestingPlayed then return end
+    if requestingPlayed or not RequestTimePlayed then return end
     requestingPlayed = true
     for i = 1, NUM_CHAT_WINDOWS or 10 do
         local cf = _G["ChatFrame" .. i]
@@ -281,14 +288,13 @@ local function RequestPlayed()
             mutedChatFrames[cf] = true
         end
     end
-    C_Timer.After(0.5, RequestTimePlayed)
-end
-
-local function RestoreChatFrames()
-    for cf in pairs(mutedChatFrames) do
-        cf:RegisterEvent("TIME_PLAYED_MSG")
-    end
-    wipe(mutedChatFrames)
+    -- C_Timer rejects the bare C function, so wrap it.
+    C_Timer.After(0.5, function() RequestTimePlayed() end)
+    -- Never leave /played muted, even if no answer arrives.
+    C_Timer.After(5, function()
+        requestingPlayed = false
+        RestoreChatFrames()
+    end)
 end
 
 local function UpdateSessionTexts()

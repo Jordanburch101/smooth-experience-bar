@@ -168,7 +168,19 @@ floor = math.floor
 
 C_QuestLog = {}
 C_Timer = {}
-function C_Timer.After(d, fn) __timers[#__timers + 1] = { at = __now + d, fn = fn } end
+-- Strict like the real client: the callback must be a Lua function. Game API functions such as
+-- RequestTimePlayed are C functions there and get rejected, so the mock rejects them too.
+local C_FUNCTIONS = {}
+function C_Timer.After(d, fn)
+    assert(type(d) == "number", "Usage: C_Timer.After(seconds, callback)")
+    assert(type(fn) == "function" and not C_FUNCTIONS[fn], "bad argument #2 (Usage: C_Timer.After(seconds, callback))")
+    __timers[#__timers + 1] = { at = __now + d, fn = fn }
+end
+function __markCFunctions()
+    for _, name in ipairs({ "RequestTimePlayed", "UnitXP", "UnitXPMax", "UnitLevel", "GetXPExhaustion" }) do
+        C_FUNCTIONS[_G[name]] = true
+    end
+end
 function C_Timer.NewTicker(d, fn)
     local t = { cancelled = false }
     function t:Cancel() self.cancelled = true end
@@ -286,6 +298,8 @@ function CreateSettingsButtonInitializer(name, text, onClick)
     return { kind = "button", name = name, onClick = onClick }
 end
 function CreateSettingsListSectionHeaderInitializer(text) return { kind = "header", text = text } end
+
+__markCFunctions()
 
 function __fire(event, ...)
     for _, f in ipairs(__frames) do

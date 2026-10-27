@@ -37,6 +37,16 @@ def step(label, code=None, seconds=4):
     print(f"{label:28} -> {state()}")
 
 
+print("== /played on login")
+try:
+    lua.execute("C_Timer.After(0.5, RequestTimePlayed)")
+    print("  mock accepts a bare C function: FAIL")
+except Exception:
+    print("  mock rejects a bare C function like the client: ok")
+run(6)
+print("  chat frame gets TIME_PLAYED_MSG back:", bool(G.ChatFrame1.events.TIME_PLAYED_MSG))
+print("  played time shown:", state().split(" | ")[-2])
+
 print("== settings page")
 layout = G.__settingsLayout
 for i in range(len(layout)):
