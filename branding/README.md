@@ -10,3 +10,14 @@ https://www.wowhead.com/icon=6841475/inv-cosmicdragonmount).
 - `smooth-experience-bar-56.png` - the original with the 4 px game border cropped off, lossless. Use this
   (or the upscales) for CurseForge and other listings.
 - `smooth-experience-bar-64.png`, `-128.png`, `-256.png` - upscaled from the 56px crop
+
+## Gallery
+
+`gallery/` holds listing screenshots (1600x900) and `hero.gif`, rendered from the real addon code by
+`tools/harness/gallery.py` over `gallery-backdrop.jpg` (a crop of an in-game screenshot). Text uses the game
+font; the script looks for a copy of `frizqt__.ttf` (DialogueUI ships one) or `SEB_FONT`, else falls back to
+Arial. Session numbers are seeded so they look like a real play session.
+
+```
+tools/venv/Scripts/python tools/harness/gallery.py SmoothExperienceBar branding/gallery branding/gallery-backdrop.jpg
+```

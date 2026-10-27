@@ -171,7 +171,8 @@ end
 function GetQuestLogSelection() return 0 end
 function SelectQuestLogEntry() end
 function IsQuestComplete() return false end
-function RequestTimePlayed() __fire("TIME_PLAYED_MSG", 360000, 240) end
+__played = { total = 360000, level = 240 }
+function RequestTimePlayed() __fire("TIME_PLAYED_MSG", __played.total, __played.level) end
 function GetTime() return __now end
 function time() return 1800000000 + floor(__now) end
 floor = math.floor
