@@ -46,5 +46,6 @@ tools/venv/Scripts/python -m pip install lupa numpy pillow
 
 python tools/make_media.py SmoothExperienceBar/Media
 tools/venv/Scripts/python tools/harness/run.py SmoothExperienceBar preview      # preview.gif + sheet.png
+tools/venv/Scripts/python tools/harness/run.py SmoothExperienceBar preview theme=fel width=800 height=48
 tools/venv/Scripts/python tools/harness/slash_test.py SmoothExperienceBar       # commands, settings, themes
 ```

@@ -1,6 +1,7 @@
 """Load SmoothExperienceBar against the WoW mock, play a scripted scenario and render it.
 
-Usage: python run.py <addon dir> <out dir> [width height]
+Usage: python run.py <addon dir> <out dir> [setting=value ...]
+e.g.   python run.py SmoothExperienceBar preview theme=fel width=800 height=48
 Writes preview.gif (30 fps) and sheet.png (stills at key moments).
 """
 import math
@@ -12,9 +13,23 @@ from lupa.luajit21 import LuaRuntime
 from PIL import Image, ImageDraw, ImageFont
 
 ADDON, OUT = sys.argv[1], sys.argv[2]
+SETTINGS = dict(arg.split("=", 1) for arg in sys.argv[3:])
 HERE = os.path.dirname(os.path.abspath(__file__))
 FPS, SS = 60, 2  # sim rate, supersampling
-BAR_W, BAR_H = (int(sys.argv[3]), int(sys.argv[4])) if len(sys.argv) > 4 else (600, 30)
+BAR_W, BAR_H = int(SETTINGS.get("width", 600)), int(SETTINGS.get("height", 30))
+
+
+def lua_value(v):
+    if v in ("true", "false"):
+        return v
+    try:
+        float(v)
+        return v
+    except ValueError:
+        return repr(v)
+
+
+APPLY_SETTINGS = "".join(f"__settings[{k!r}]:SetValue({lua_value(v)}); " for k, v in SETTINGS.items())
 MARGIN_X, MARGIN_Y = 20, int(40 * max(1, BAR_H / 30))
 IMG_W, IMG_H = BAR_W + MARGIN_X * 2, BAR_H + MARGIN_Y * 2
 LAYERS = {"BACKGROUND": 0, "BORDER": 1, "ARTWORK": 2, "OVERLAY": 3, "HIGHLIGHT": 4}
@@ -129,7 +144,7 @@ def render():
 # Scenario: (time, label, lua code)
 P = "__player"
 SCENARIO = [
-    (0.0, None, "__quests = {{id = 1, xp = 15000, complete = true}}; __fire('ADDON_LOADED', 'SmoothExperienceBar'); " f"__settings.width:SetValue({BAR_W}); __settings.height:SetValue({BAR_H}); " "__fire('PLAYER_ENTERING_WORLD', true, false); __fire('QUEST_LOG_UPDATE')"),
+    (0.0, None, "__quests = {{id = 1, xp = 15000, complete = true}}; __fire('ADDON_LOADED', 'SmoothExperienceBar'); " + APPLY_SETTINGS + "__fire('PLAYER_ENTERING_WORLD', true, false); __fire('QUEST_LOG_UPDATE')"),
     (1.0, "kill", f"{P}.xp = {P}.xp + 900; {P}.rested = {P}.rested - 900; __fire('PLAYER_XP_UPDATE', 'player')"),
     (1.5, None, f"{P}.xp = {P}.xp + 900; __fire('PLAYER_XP_UPDATE', 'player')"),
     (2.0, None, f"{P}.xp = {P}.xp + 900; __fire('PLAYER_XP_UPDATE', 'player')"),
