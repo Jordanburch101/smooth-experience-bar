@@ -48,20 +48,33 @@ function Region:GetPoint()
 end
 function Region:SetWidth(w) self.w = w end
 function Region:SetHeight(h) self.h = h end
-function Region:SetSize(w, h) self.w, self.h = w, h end
+function Region:SetSize(w, h)
+    local changed = w ~= self.w or h ~= self.h
+    self.w, self.h = w, h
+    if changed and self.scripts.OnSizeChanged then self.scripts.OnSizeChanged(self, w, h) end
+end
 function Region:GetWidth() return self.w end
+function Region:GetHeight() return self.h end
+function Region:GetLeft() return 660 end
+function Region:GetTop() return 1040 end
+function Region:SetResizable() end
+function Region:SetResizeBounds(...) self.bounds = { ... } end
+function Region:StartSizing(point) self.sizing = point end
+function Region:SetFrameLevel(l) self.level = l end
+function Region:GetFrameLevel() return self.level or 1 end
 function Region:Show() self.shown = true end
 function Region:Hide() self.shown = false end
 function Region:IsShown() return self.shown end
+function Region:SetShown(v) self.shown = not not v end
 function Region:SetAlpha(a) self.alpha = a end
 function Region:SetScale(s) self.scale = s end
 function Region:SetFrameStrata() end
 function Region:SetClampedToScreen() end
 function Region:SetMovable() end
 function Region:RegisterForDrag() end
-function Region:EnableMouse() end
-function Region:StartMoving() end
-function Region:StopMovingOrSizing() end
+function Region:EnableMouse(v) self.mouse = v end
+function Region:StartMoving() self.moving = true end
+function Region:StopMovingOrSizing() self.moving, self.sizing = nil, nil end
 function Region:SetScript(name, fn) self.scripts[name] = fn end
 function Region:RegisterEvent(e) self.events[e] = true end
 function Region:UnregisterEvent(e) self.events[e] = nil end
@@ -194,6 +207,86 @@ function FormatLargeNumber(n)
     return s
 end
 
+function hooksecurefunc(t, method, fn)
+    local orig = t[method]
+    t[method] = function(...)
+        local r = orig(...)
+        fn(...)
+        return r
+    end
+end
+
+MainMenuExpBar = NewRegion("Frame", UIParent)
+
+__combat = false
+function InCombatLockdown() return __combat end
+
+GameTooltip = NewRegion("Frame", UIParent)
+GameTooltip.shown = false
+function GameTooltip:SetOwner(owner) self.owner, self.lines = owner, {} end
+function GameTooltip:AddLine(text) self.lines[#self.lines + 1] = text end
+
+-- Native Settings API (11.x signatures, as used by the TBC Anniversary client).
+__settings, __settingsLayout = {}, {}
+Settings = {}
+local Setting = {}
+Setting.__index = Setting
+function Setting:SetValueChangedCallback(fn) self.cb = fn end
+function Setting:GetValue() return self.tbl[self.key] end
+function Setting:SetValue(v)
+    self.tbl[self.key] = v
+    if self.cb then self.cb(self, v) end
+end
+local function addInit(i) __settingsLayout[#__settingsLayout + 1] = i end
+
+function Settings.RegisterVerticalLayoutCategory(name)
+    local cat = { name = name }
+    function cat:GetID() return self.name end
+    return cat, { AddInitializer = function(_, i) addInit(i) end }
+end
+function Settings.RegisterAddOnSetting(cat, variable, key, tbl, vtype, name, default)
+    assert(type(cat) == "table" and type(variable) == "string" and type(key) == "string"
+        and type(tbl) == "table" and type(name) == "string", "bad RegisterAddOnSetting args for " .. tostring(key))
+    assert(vtype == type(default), "type/default mismatch for " .. key)
+    assert(not __settings[key], "duplicate setting " .. key)
+    if tbl[key] == nil then tbl[key] = default end
+    local s = setmetatable({ key = key, tbl = tbl, name = name, vtype = vtype }, Setting)
+    __settings[key] = s
+    return s
+end
+function Settings.CreateCheckbox(_, s)
+    assert(s.vtype == "boolean", "checkbox on non-boolean " .. s.key)
+    addInit({ kind = "checkbox", key = s.key })
+end
+function Settings.CreateSliderOptions(lo, hi, step)
+    local o = { min = lo, max = hi, step = step }
+    function o:SetLabelFormatter(_, f) self.fmt = f end
+    return o
+end
+function Settings.CreateSlider(_, s, o)
+    assert(s.vtype == "number", "slider on non-number " .. s.key)
+    assert(type(o.fmt(s:GetValue())) == "string", "slider formatter for " .. s.key)
+    addInit({ kind = "slider", key = s.key })
+end
+function Settings.CreateDropdown(_, s, getOptions)
+    local opts = getOptions()
+    assert(#opts > 0, "empty dropdown " .. s.key)
+    addInit({ kind = "dropdown", key = s.key, options = opts })
+end
+function Settings.CreateControlTextContainer()
+    local c = { data = {} }
+    function c:Add(value, label) self.data[#self.data + 1] = { value = value, label = label } end
+    function c:GetData() return self.data end
+    return c
+end
+function Settings.RegisterAddOnCategory(cat) __settingsCategory = cat end
+function Settings.OpenToCategory(id) __openedCategory = id end
+MinimalSliderWithSteppersMixin = { Label = { Right = 1 } }
+function CreateSettingsButtonInitializer(name, text, onClick)
+    return { kind = "button", name = name, onClick = onClick }
+end
+function CreateSettingsListSectionHeaderInitializer(text) return { kind = "header", text = text } end
+
 function __fire(event, ...)
     for _, f in ipairs(__frames) do
         if f.events[event] and f.scripts.OnEvent then f.scripts.OnEvent(f, event, ...) end
@@ -218,4 +311,16 @@ end
 function __load(path, name, ns)
     local chunk = assert(loadfile(path))
     chunk(name, ns)
+end
+
+-- Load every file listed in <dir>/<name>.toc, in order, sharing one addon namespace.
+function __loadAddon(dir, name)
+    local ns = {}
+    for line in io.lines(dir .. "/" .. name .. ".toc") do
+        line = line:gsub("%s+$", "")
+        if line ~= "" and not line:find("^#") then
+            __load(dir .. "/" .. line:gsub("\\", "/"), name, ns)
+        end
+    end
+    return ns
 end

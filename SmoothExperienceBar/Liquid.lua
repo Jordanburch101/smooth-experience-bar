@@ -36,9 +36,10 @@ local Liquid = {}
 Liquid.__index = Liquid
 ns.Liquid = Liquid
 
-function Liquid.New(parent, width, height, colors)
+-- opts holds the user toggles (waves, swirl, bubbles, sparkles) and is read live.
+function Liquid.New(parent, width, height, theme, opts)
     local self = setmetatable({}, Liquid)
-    self.parent, self.width, self.height, self.colors = parent, width, height, colors
+    self.parent, self.width, self.height, self.opts = parent, width, height, opts
     self.rowH = height / CFG.rows
 
     local function Tex(layer, sublevel, file, blend, wrap)
@@ -69,7 +70,6 @@ function Liquid.New(parent, width, height, colors)
 
         local tip = Tex("ARTWORK", 6, TEX, "ADD")
         tip:SetSize(3, self.rowH)
-        tip:SetVertexColor(1, 0.92, 1)
         self.tips[i] = tip
 
         self.pos[i], self.vel[i] = 0, 0
@@ -78,16 +78,13 @@ function Liquid.New(parent, width, height, colors)
     self.swirlA = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
     self.swirlA:SetPoint("TOPLEFT")
     self.swirlA:SetPoint("BOTTOMLEFT")
-    self.swirlA:SetVertexColor(0.85, 0.72, 1)
 
     self.swirlB = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
     self.swirlB:SetPoint("TOPLEFT")
     self.swirlB:SetPoint("BOTTOMLEFT")
-    self.swirlB:SetVertexColor(0.55, 0.85, 1)
 
     self.glow = Tex("ARTWORK", 7, MEDIA .. "Glow", "ADD")
     self.glow:SetSize(36, height * 1.7)
-    self.glow:SetVertexColor(0.85, 0.7, 1)
 
     self.bubbles = {}
     for i = 1, CFG.bubbles do
@@ -103,7 +100,56 @@ function Liquid.New(parent, width, height, colors)
     self.t, self.acc, self.energy, self.fizzAcc = 0, 0, 0, 0
     self.edge, self.speed = 0, 0
     self.uA, self.uB, self.vB = 0, 0.37, 0
+    self:SetTheme(theme)
     return self
+end
+
+function Liquid:SetTheme(theme)
+    self.theme = theme
+    for _, tip in ipairs(self.tips) do
+        tip:SetVertexColor(unpack(theme.tip))
+    end
+    self.swirlA:SetVertexColor(unpack(theme.swirlA))
+    self.swirlB:SetVertexColor(unpack(theme.swirlB))
+    self.glow:SetVertexColor(unpack(theme.glow))
+    for _, b in ipairs(self.bubbles) do
+        b.tex:SetVertexColor(unpack(theme.bubble))
+    end
+end
+
+function Liquid:SetSize(width, height)
+    self.width, self.height = width, height
+    self.rowH = height / CFG.rows
+    for i = 1, CFG.rows do
+        self.rows[i]:SetHeight(self.rowH)
+        self.tips[i]:SetSize(3, self.rowH)
+    end
+    self.glow:SetSize(36, height * 1.7)
+end
+
+function Liquid:SetOptions(opts)
+    self.opts = opts
+    self:ApplyOptions()
+end
+
+-- Clear anything a toggle just switched off.
+function Liquid:ApplyOptions()
+    local opts = self.opts
+    if not opts.waves then
+        for i = 1, CFG.rows do self.pos[i], self.vel[i] = 0, 0 end
+    end
+    if not opts.bubbles then
+        for _, b in ipairs(self.bubbles) do
+            b.active = false
+            b.tex:Hide()
+        end
+    end
+    if not opts.sparkles then
+        for _, m in ipairs(self.motes) do
+            m.active = false
+            m.tex:Hide()
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -120,21 +166,23 @@ function Liquid:Splash(intensity, fromX, toX)
     self.energy = min(1.5, self.energy + 0.08 + intensity * 0.9)
 
     -- Ripple out from a random point on the front.
-    local n = CFG.rows
-    local centre = random(1, n)
-    local kick = 40 + 160 * intensity
-    for i = 1, n do
-        local d = (i - centre) / n
-        self.vel[i] = self.vel[i] + kick * exp(-d * d * 8)
+    if self.opts.waves then
+        local n = CFG.rows
+        local centre = random(1, n)
+        local kick = 40 + 160 * intensity
+        for i = 1, n do
+            local d = (i - centre) / n
+            self.vel[i] = self.vel[i] + kick * exp(-d * d * 8)
+        end
     end
 
-    local h = self.height
+    local h, theme = self.height, self.theme
     for _ = 1, floor(1 + intensity * 18) do
         local s = 0.5 + intensity
         self:EmitMote(Rand(fromX - 6, max(fromX, toX)), Rand(2, h - 2),
             Rand(-20, 60) * s, Rand(10, 70) * s,
             Rand(0.5, 1.1) + intensity * 0.4, Rand(8, 14) * (0.7 + 0.5 * intensity),
-            0.9, 0.75, 1, 1, 0.55, 0.95)
+            theme.splashFrom, theme.splashTo)
     end
     for _ = 1, floor(intensity * 8) do
         self:EmitBubble(Rand(max(4, fromX - 40), max(4, fromX - 2)))
@@ -143,26 +191,28 @@ end
 
 -- Completed-quest XP turned in: orange motes stream from the quest segment into the liquid.
 function Liquid:Absorb(fromX, toX, intensity)
-    local h = self.height
+    local h, theme = self.height, self.theme
     for _ = 1, floor(4 + intensity * 16) do
         self:EmitMote(Rand(fromX, max(fromX, toX)), Rand(2, h - 2),
             -Rand(40, 140), Rand(-10, 25),
             Rand(0.6, 1.1), Rand(8, 13),
-            1, 0.62, 0.1, 0.8, 0.5, 1)
+            theme.quest, theme.absorbTo)
     end
 end
 
 function Liquid:LevelUp()
     self.energy = 1.5
-    for i = 1, CFG.rows do
-        self.vel[i] = self.vel[i] + Rand(120, 220)
+    if self.opts.waves then
+        for i = 1, CFG.rows do
+            self.vel[i] = self.vel[i] + Rand(120, 220)
+        end
     end
-    local w, h = self.width, self.height
+    local w, h, theme = self.width, self.height, self.theme
     for _ = 1, 30 do
         self:EmitMote(Rand(0, w), Rand(0, h),
             Rand(-30, 30), Rand(40, 120),
             Rand(0.8, 1.6), Rand(10, 18),
-            1, 0.95, 1, 0.75, 0.5, 1)
+            theme.levelFrom, theme.levelTo)
     end
 end
 
@@ -182,16 +232,19 @@ end
 -- Particles
 --------------------------------------------------------------------------------
 
-function Liquid:EmitMote(x, y, vx, vy, life, size, r1, g1, b1, r2, g2, b2)
+-- from/to are the colours the mote fades between over its life.
+function Liquid:EmitMote(x, y, vx, vy, life, size, from, to)
+    if not self.opts.sparkles then return end
     local m = self.motes[self.moteNext]
     self.moteNext = self.moteNext % #self.motes + 1
     m.x, m.y, m.vx, m.vy, m.age, m.life, m.size = x, y, vx, vy, 0, life, size
-    m.r1, m.g1, m.b1, m.r2, m.g2, m.b2 = r1, g1, b1, r2, g2, b2
+    m.r1, m.g1, m.b1, m.r2, m.g2, m.b2 = from[1], from[2], from[3], to[1], to[2], to[3]
     m.active = true
     m.tex:Show()
 end
 
 function Liquid:EmitBubble(x)
+    if not self.opts.bubbles then return end
     for _, b in ipairs(self.bubbles) do
         if not b.active then
             b.x, b.y = x, Rand(2, 6)
@@ -294,7 +347,7 @@ function Liquid:Update(dt, edge)
     local speed = (edge - self.edge) / dt
     local dv = speed - self.speed
     self.edge, self.speed = edge, speed
-    if dv ~= 0 then
+    if dv ~= 0 and self.opts.waves then
         local kick = -dv * CFG.slosh
         local n = CFG.rows
         for i = 1, n do
@@ -319,8 +372,8 @@ function Liquid:Draw(dt)
     local parent, w, h, amp = self.parent, self.width, self.height, CFG.amplitude
     local edge, energy, t = self.edge, self.energy, self.t
     local base = max(0, edge - amp)
-    local c = self.colors
-    local fa, fb = c.fillA, c.fillB
+    local opts = self.opts
+    local fa, fb = self.theme.fillA, self.theme.fillB
 
     -- Gradient stretched over the whole fill, like the WeakAura; the body stops where the front begins.
     local tb = edge > 0 and base / edge or 0
@@ -336,7 +389,7 @@ function Liquid:Draw(dt)
         self.body:Hide()
     end
 
-    local wobble = CFG.ambient * (0.6 + energy)
+    local wobble = opts.waves and CFG.ambient * (0.6 + energy) or 0
     local tipAlpha = 0.25 + 0.5 * min(1, energy)
     local rowH = self.rowH
     for i = 1, CFG.rows do
@@ -365,7 +418,7 @@ function Liquid:Draw(dt)
 
     -- Magic veins drift toward the front; faster and brighter with energy and fill speed.
     local swirlW = max(0, edge - amp * 0.5)
-    if swirlW >= 1 then
+    if swirlW >= 1 and opts.swirl then
         local flow = 0.015 + 0.12 * energy + max(0, self.speed) / 2000
         self.uA = (self.uA - flow * dt) % 1
         self.uB = (self.uB - flow * 0.6 * dt) % 1
