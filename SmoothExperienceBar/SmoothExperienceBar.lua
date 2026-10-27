@@ -10,8 +10,10 @@ local exp, min, max, abs, floor, ceil = math.exp, math.min, math.max, math.abs, 
 local barWidth, barHeight = 600, 30 -- current size, follows db.width / db.height
 local BASE_HEIGHT = 30 -- text sizes and offsets below are for this height and scale with it
 local MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT = 200, 1600, 16, 60
-local TEX = "Interface\\Buttons\\WHITE8x8"
-local FONT = "Fonts\\FRIZQT__.TTF"
+-- Game files by path are unreliable on Forever, so solid fills use SetColorTexture, textures are the
+-- addon's own TGAs, and the font is taken from a game font object.
+local MEDIA = "Interface\\AddOns\\SmoothExperienceBar\\Media\\"
+local FONT = (GameFontNormal and GameFontNormal:GetFont()) or "Fonts\\FRIZQT__.TTF"
 local LAYOUT_VERSION = 2 -- bump to reset saved positions when the layout changes
 
 local ANIM = {
@@ -107,11 +109,11 @@ bar:RegisterForDrag("LeftButton")
 
 local bg = bar:CreateTexture(nil, "BACKGROUND")
 bg:SetAllPoints()
-bg:SetTexture(TEX)
+bg:SetColorTexture(1, 1, 1, 1)
 
 local function Segment(sublevel)
     local t = bar:CreateTexture(nil, "ARTWORK", nil, sublevel)
-    t:SetTexture(TEX)
+    t:SetColorTexture(1, 1, 1, 1)
     t:SetPoint("TOPLEFT")
     t:SetPoint("BOTTOMLEFT")
     return t
@@ -124,7 +126,7 @@ local liquid    = ns.Liquid.New(bar, barWidth, barHeight, theme, db)
 
 local flash = bar:CreateTexture(nil, "OVERLAY", nil, 2)
 flash:SetAllPoints()
-flash:SetTexture(TEX)
+flash:SetColorTexture(1, 1, 1, 1)
 flash:SetBlendMode("ADD")
 flash:SetAlpha(0)
 
@@ -183,9 +185,10 @@ grip:SetPoint("BOTTOMRIGHT", 2, -2)
 grip:EnableMouse(true)
 local gripTex = grip:CreateTexture(nil, "OVERLAY")
 gripTex:SetAllPoints()
-gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-grip:SetScript("OnEnter", function() gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight") end)
-grip:SetScript("OnLeave", function() gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up") end)
+gripTex:SetTexture(MEDIA .. "Grip")
+gripTex:SetVertexColor(0.8, 0.8, 0.8)
+grip:SetScript("OnEnter", function() gripTex:SetVertexColor(1, 0.9, 0.4) end)
+grip:SetScript("OnLeave", function() gripTex:SetVertexColor(0.8, 0.8, 0.8) end)
 
 local function Place(tex, x, w)
     if w < 0.5 then
@@ -235,8 +238,26 @@ local IsQuestComplete = (C_QuestLog and C_QuestLog.IsComplete) or IsQuestComplet
 -- Selecting entries fires QUEST_LOG_UPDATE, so scans we trigger ourselves are ignored briefly.
 local ignoreQuestUpdatesUntil = 0
 
+-- Forever runs the modern quest log API; the classic functions below are missing there.
+local function ScanQuestXPModern()
+    local total = 0
+    for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+        local info = C_QuestLog.GetInfo(i)
+        local questID = info and not info.isHeader and info.questID
+        if questID and questID > 0 and (C_QuestLog.IsComplete(questID)
+            or (C_QuestLog.ReadyForTurnIn and C_QuestLog.ReadyForTurnIn(questID))) then
+            total = total + (GetQuestLogRewardXP(questID) or 0)
+        end
+    end
+    return total
+end
+
 local function ScanQuestXP()
     if not GetQuestLogRewardXP then return 0 end
+    if not GetQuestLogTitle then
+        if C_QuestLog and C_QuestLog.GetInfo then return ScanQuestXPModern() end
+        return 0
+    end
     local total, reselected = 0, false
     local previous = GetQuestLogSelection and GetQuestLogSelection()
     for i = 1, GetNumQuestLogEntries() do

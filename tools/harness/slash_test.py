@@ -145,6 +145,38 @@ for i in range(len(layout)):
 print("  after reset:", G.SmoothExperienceBarDB.width, G.SmoothExperienceBarDB.height, G.SmoothExperienceBarDB.scale,
       list(G.SmoothExperienceBarDB.point.values()))
 
+print("== textures load nothing from game paths (Forever blocks them)")
+bad = lua.eval("""function()
+    local bad = {}
+    for _, r in ipairs(__regions) do
+        local f = r.file
+        if r.kind == "Texture" and f and f ~= "SOLID" and not f:find("^Interface\\\\AddOns\\\\SmoothExperienceBar\\\\") then
+            bad[#bad + 1] = f
+        end
+    end
+    return table.concat(bad, ", ")
+end""")()
+print("  game-path textures:", bad or "none")
+
+print("== Forever's modern quest log API")
+lua.execute("""
+    SlashCmdList.SMOOTHEXPERIENCEBAR('test off')
+    GetQuestLogTitle, GetNumQuestLogEntries, SelectQuestLogEntry, GetQuestLogSelection = nil, nil, nil, nil
+    local log = {
+        { isHeader = true, questID = 0 },
+        { isHeader = false, questID = 11, done = true, xp = 9000 },
+        { isHeader = false, questID = 12, done = false, xp = 5000 },
+        { isHeader = false, questID = 13, ready = true, xp = 6000 },
+    }
+    C_QuestLog.GetNumQuestLogEntries = function() return #log end
+    C_QuestLog.GetInfo = function(i) return log[i] end
+    C_QuestLog.IsComplete = function(id) for _, q in ipairs(log) do if q.questID == id then return q.done end end end
+    C_QuestLog.ReadyForTurnIn = function(id) for _, q in ipairs(log) do if q.questID == id then return q.ready end end end
+    GetQuestLogRewardXP = function(id) for _, q in ipairs(log) do if q.questID == id then return q.xp end end return 0 end
+    __fire('QUEST_LOG_UPDATE')
+""")
+step("modern quest log (15,000 done)", None, 2)
+
 print("== max level")
 lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('test off'); __player.level = 70; __player.xp = 0")
 step("level 70, showMaxLevel off", "__fire('PLAYER_XP_UPDATE', 'player')")

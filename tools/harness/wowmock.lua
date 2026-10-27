@@ -240,6 +240,8 @@ end
 
 MainMenuExpBar = NewRegion("Frame", UIParent)
 
+GameFontNormal = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+
 __combat = false
 function InCombatLockdown() return __combat end
 

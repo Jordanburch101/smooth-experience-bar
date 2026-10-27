@@ -8,7 +8,6 @@ local exp, min, max, abs, sin, cos, sqrt, floor, random, pi =
     math.exp, math.min, math.max, math.abs, math.sin, math.cos, math.sqrt, math.floor, math.random, math.pi
 
 local MEDIA = "Interface\\AddOns\\SmoothExperienceBar\\Media\\"
-local TEX = "Interface\\Buttons\\WHITE8x8"
 local SWIRL_W, SWIRL_H = 256, 64
 
 local CFG = {
@@ -93,7 +92,9 @@ function Liquid.New(parent, width, height, theme, opts)
 
     local function Tex(layer, sublevel, file, blend, wrap)
         local t = parent:CreateTexture(nil, layer, nil, sublevel)
-        if wrap then
+        if not file then
+            t:SetColorTexture(1, 1, 1, 1) -- solid; tinted with vertex colours and gradients
+        elseif wrap then
             t:SetTexture(file, wrap, wrap)
         else
             t:SetTexture(file)
@@ -107,17 +108,17 @@ function Liquid.New(parent, width, height, theme, opts)
         return t
     end
 
-    self.body = Tex("ARTWORK", 3, TEX)
+    self.body = Tex("ARTWORK", 3)
     self.body:SetPoint("TOPLEFT")
     self.body:SetPoint("BOTTOMLEFT")
 
     self.rows, self.tips, self.pos, self.vel = {}, {}, {}, {}
     for i = 1, CFG.rows do
-        local row = Tex("ARTWORK", 3, TEX)
+        local row = Tex("ARTWORK", 3)
         row:SetHeight(self.rowH)
         self.rows[i] = row
 
-        local tip = Tex("ARTWORK", 6, TEX, "ADD")
+        local tip = Tex("ARTWORK", 6, nil, "ADD")
         tip:SetSize(3, self.rowH)
         self.tips[i] = tip
 

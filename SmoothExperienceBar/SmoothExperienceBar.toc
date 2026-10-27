@@ -1,9 +1,9 @@
-## Interface: 20506
+## Interface: 16001, 11509, 20506
 ## Title: Smooth Experience Bar
-## Notes: Lightweight experience bar with smooth fill animation, completed quest XP and rested XP. Layout based on the Luxthos Experience Bar WeakAura.
+## Notes: A lightweight standalone take on the Luxthos Experience Bar WeakAura, with quest and rested XP, session stats and optional themes.
 ## Author: Jordan
-## Version: 0.4.0
-## IconTexture: Interface\Icons\INV_Scroll_10
+## Version: 1.0.0
+## IconTexture: Interface\AddOns\SmoothExperienceBar\Media\Icon
 ## SavedVariables: SmoothExperienceBarDB
 ## SavedVariablesPerCharacter: SmoothExperienceBarCharDB
 

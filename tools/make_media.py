@@ -314,6 +314,35 @@ def make_crystal(path, size=32):
     write_tga(path, size, size, radial(size, fn))
 
 
+def make_icon(path):
+    """Addon list icon, from branding/ (needs Pillow; skipped without it).
+
+    An addon TGA rather than the game's INV_Scroll_10, because Forever does not load game files by path.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        print("Pillow not installed, Icon.tga not regenerated")
+        return
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "branding", "smooth-experience-bar-64.png")
+    im = Image.open(src).convert("RGBA").resize((64, 64))
+    px = im.load()
+    write_tga(path, 64, 64, lambda x, y: tuple(c / 255 for c in px[x, y]))
+
+
+def make_grip(path, size=16):
+    """Resize grip: three diagonal ridges in the bottom-right corner."""
+
+    def pixel(x, y):
+        s = (x + y) - (size - 1)  # 0 on the anti-diagonal, growing toward the corner
+        if s < 0:
+            return 1, 1, 1, 0
+        a = max(0.0, 1 - abs((s % 4) - 1) / 1.2) if s < 12 else 0.0
+        return 1, 1, 1, a
+
+    write_tga(path, size, size, pixel)
+
+
 def main():
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
@@ -332,6 +361,8 @@ def main():
     make_leaf(os.path.join(out, "Leaf.tga"))
     make_star(os.path.join(out, "Star.tga"))
     make_crystal(os.path.join(out, "Crystal.tga"))
+    make_grip(os.path.join(out, "Grip.tga"))
+    make_icon(os.path.join(out, "Icon.tga"))
     print("wrote", sorted(os.listdir(out)))
 
 
