@@ -13,6 +13,8 @@
 #                     lists (16001 is 1.60.1, 11509 is 1.15.9, 20506 is 2.5.6), which
 #                     need updating by hand after a client patch.
 set -euo pipefail
+# Without this, a failed curl inside $(...) is ignored and the check reports success with no versions.
+shopt -s inherit_errexit
 
 API="https://wow.curseforge.com/api"
 TOC="$(dirname "$0")/../SmoothExperienceBar/SmoothExperienceBar.toc"
@@ -71,6 +73,7 @@ resolve_versions() {
 case "${1:-}" in
     check)
         ids=$(resolve_versions)
+        [ "$(jq length <<< "$ids")" -gt 0 ] || { echo "No game versions resolved" >&2; exit 1; }
         echo "Token works. Game version IDs to upload with: $ids"
         ;;
     upload)
