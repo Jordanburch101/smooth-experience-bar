@@ -145,6 +145,15 @@ function Color:SetRGBA(r, g, b, a) self.r, self.g, self.b, self.a = r, g, b, a e
 function Color:GetRGBA() return self.r, self.g, self.b, self.a end
 function CreateColor(r, g, b, a) return setmetatable({ r = r, g = g, b = b, a = a or 1 }, Color) end
 
+__player.class, __player.faction = "PALADIN", "Alliance"
+function UnitClass() return "Paladin", __player.class end
+function UnitFactionGroup() return __player.faction end
+RAID_CLASS_COLORS = {
+    PALADIN = { r = 0.96, g = 0.55, b = 0.73 }, MAGE = { r = 0.25, g = 0.78, b = 0.92 },
+    DRUID = { r = 1.00, g = 0.49, b = 0.04 }, PRIEST = { r = 1.00, g = 1.00, b = 1.00 },
+    WARLOCK = { r = 0.53, g = 0.53, b = 0.93 },
+}
+
 function UnitXP() return __player.xp end
 function UnitXPMax() return __player.max end
 function UnitLevel() return __player.level end
