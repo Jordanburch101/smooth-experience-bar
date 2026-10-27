@@ -106,3 +106,19 @@ Themes.Register("toxic", {
     ambient = { { area = "surface", rate = 2, texture = "Glow", size = { 6, 10 }, vy = { 8, 16 } } },
 })
 ```
+
+### Releases
+
+1. Add the version's section to `CHANGELOG.md` as features land: `## X.Y.Z` with `### New` and
+   `### Fixed`, written for players. `bash scripts/changelog.sh X.Y.Z` prints what the release will use.
+2. Run the tests (and `scripts/package.ps1` if you like), commit and push `main`.
+3. Push an annotated tag: `git tag -a vX.Y.Z -m "Smooth Experience Bar X.Y.Z"`, then
+   `git push origin vX.Y.Z`. Tags containing `beta` or `alpha` become pre-releases.
+4. The Release workflow fails at once if the changelog section is missing, then tests, builds, makes the
+   GitHub release with the zip and notes, and uploads to CurseForge (`CF_API_TOKEN` secret and
+   `CF_PROJECT_ID` variable). Watch it to the end: the GitHub release can succeed while the upload fails.
+5. If only the CurseForge upload failed, fix the cause on `main`, then run
+   `gh workflow run curseforge-check.yml -f tag=vX.Y.Z` to upload that release again.
+
+CI (`.github/workflows/ci.yml`) runs the tests and a release build on every push to `main` and on pull
+requests; the build is attached to the run as a download.

@@ -65,7 +65,7 @@ jobs:
           if [ "${{ steps.type.outputs.type }}" != "release" ]; then flags="--prerelease"; fi
           gh release create "$GITHUB_REF_NAME" "${{ steps.package.outputs.zip }}" \
             --title "Smooth Experience Bar ${{ steps.package.outputs.version }}" \
-            --notes-file "$RUNNER_TEMP/notes.md" $flags
+            --notes-file "$RUNNER_TEMP/notes.md" --generate-notes $flags
 
       - name: CurseForge upload
         env:
