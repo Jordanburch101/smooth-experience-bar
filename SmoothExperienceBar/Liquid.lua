@@ -461,11 +461,19 @@ function Liquid:UpdateParticles(dt)
             else
                 m.x = m.x + m.vx * dt
                 m.y = m.y + m.vy * dt
-                local size = m.size * (1 - 0.5 * p)
+                local size, alpha
+                if m.ambient then
+                    -- Lingering particles: fade in, hold, fade out.
+                    size = m.size * (1 - 0.2 * p)
+                    alpha = min(1, p / 0.2, (1 - p) / 0.3)
+                else
+                    -- Bursts flare and die away.
+                    size = m.size * (1 - 0.5 * p)
+                    alpha = (p < 0.1 and p / 0.1 or 1) * (1 - p) ^ 1.5
+                end
                 if st.grow then
                     size = m.size * min(1, 0.3 + 0.7 * p / 0.2) * (1 - 0.3 * p)
                 end
-                local alpha = (p < 0.1 and p / 0.1 or 1) * (1 - p) ^ 1.5
                 if st.twinkle then
                     alpha = alpha * (0.55 + 0.45 * sin(m.phase + t * st.twinkle * 2 * pi))
                 end

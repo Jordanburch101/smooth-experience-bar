@@ -402,7 +402,10 @@ local function StepFill(dt)
         A.hold = A.hold - dt
     else
         -- Several pending level-ups speed the sweep up so it never feels stuck.
-        local rate = ANIM.rate * db.speed * (theme.fillSpeed or 1) * (1 + max(0, A.wraps - 1) * 0.5)
+        -- Slow themes still sweep through a level-up at normal speed so it never crawls.
+        local themeSpeed = theme.fillSpeed or 1
+        if wrapping then themeSpeed = max(1, themeSpeed) end
+        local rate = ANIM.rate * db.speed * themeSpeed * (1 + max(0, A.wraps - 1) * 0.5)
         A.fill = Approach(A.fill, wrapping and 1 + ANIM.overshoot or target, dt, rate)
     end
 

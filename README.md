@@ -27,14 +27,26 @@ level-ups.
 
 ## Themes
 
+25 themes ship in `Themes.lua`:
+
+- Default: Luxthos
+- Smart: Class Color, Faction, Item Quality (changes colour as the bar fills), Prismatic (cycles hue)
+- Colour: Arcane, Fel, Holy, Blood, Ember, Tidal, Plague, Midnight, Sunset
+- Outland zones: Zangarmarsh, Netherstorm, Hellfire, Nagrand
+- Effects: Fire, Frost, Honey, Lava, Cosmic, Nature, Void. These also change physics, swirl texture and
+  particles.
+
 Register a theme in `Themes.lua`. Only the fields that differ from the default theme are needed; it then
-appears in the Theme dropdown.
+appears in the Theme dropdown. The comment at the top of `Themes.lua` lists everything a theme can set.
 
 ```lua
-Themes.Register("fel", {
-    name = "Fel",
+Themes.Register("toxic", {
+    name = "Toxic",
     fillA = { 0.10, 0.60, 0.10 },
     fillB = { 0.55, 1.00, 0.20 },
+    physics = { damping = 6, ambient = 0.4 },              -- thicker liquid
+    burst = { texture = "Ember", buoyancy = 40 },          -- rising sparks on XP gains
+    ambient = { { area = "surface", rate = 2, texture = "Glow", size = { 6, 10 }, vy = { 8, 16 } } },
 })
 ```
 
@@ -48,4 +60,5 @@ python tools/make_media.py SmoothExperienceBar/Media
 tools/venv/Scripts/python tools/harness/run.py SmoothExperienceBar preview      # preview.gif + sheet.png
 tools/venv/Scripts/python tools/harness/run.py SmoothExperienceBar preview theme=fel width=800 height=48
 tools/venv/Scripts/python tools/harness/slash_test.py SmoothExperienceBar       # commands, settings, themes
+tools/venv/Scripts/python tools/harness/probe.py SmoothExperienceBar cosmic     # live particle counts
 ```

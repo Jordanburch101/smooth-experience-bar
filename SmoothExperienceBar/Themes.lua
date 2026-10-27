@@ -415,10 +415,10 @@ Themes.Register("zangarmarsh", {
     swirl      = { texture = "Caustics", alpha = 0.8, flow = { 0.6, 0.3 } },
     -- Glowing mushroom spores drifting in the liquid and floating up out of it.
     ambient    = {
-        { area = "liquid", rate = 1.5, texture = "Glow", size = { 4, 8 }, life = { 2, 3.5 },
+        { area = "liquid", rate = 1.5, texture = "Glow", size = { 9, 16 }, life = { 2, 3.5 },
           vx = { -4, 4 }, vy = { 2, 8 }, buoyancy = 2, drag = 0.5, twinkle = 0.7,
           from = { 0.60, 1.00, 0.90 }, to = { 0.30, 0.80, 1.00 } },
-        { area = "surface", rate = 0.6, texture = "Glow", size = { 3, 6 }, life = { 2, 3 },
+        { area = "surface", rate = 0.6, texture = "Glow", size = { 8, 13 }, life = { 2, 3 },
           vx = { -6, 6 }, vy = { 6, 14 }, buoyancy = 2, drag = 0.4, twinkle = 0.9,
           from = { 0.60, 1.00, 0.90 }, to = { 0.40, 0.70, 1.00 } },
     },
@@ -486,8 +486,37 @@ Themes.Register("nagrand", {
 })
 
 --------------------------------------------------------------------------------
--- Effect themes
+-- Effect themes: these change how the liquid moves and what it throws off
 --------------------------------------------------------------------------------
+
+Themes.Register("fire", {
+    name = "Fire",
+    fillA      = { 0.45, 0.05, 0.00 },
+    fillB      = { 1.00, 0.55, 0.08 },
+    lead       = { 1.00, 0.90, 0.60, 0.25 },
+    quest      = ALT_QUEST, questText = ALT_QUEST_TEXT,
+    flash      = { 1.00, 0.55, 0.15 },
+    tip        = { 1.00, 0.95, 0.70 },
+    glow       = { 1.00, 0.55, 0.15 },
+    swirlA     = { 1.00, 0.75, 0.30 },
+    swirlB     = { 1.00, 0.40, 0.05 },
+    splashFrom = { 1.00, 0.90, 0.50 },
+    splashTo   = { 1.00, 0.25, 0.00 },
+    absorbTo   = { 1.00, 0.50, 0.10 },
+    levelFrom  = { 1.00, 0.95, 0.70 },
+    levelTo    = { 1.00, 0.30, 0.00 },
+    -- Quick, jumpy and always flickering.
+    physics    = { stiffness = 140, damping = 2.5, coupling = 1200, slosh = 0.22, ambient = 2.2 },
+    fillSpeed  = 1.3,
+    swirl      = { texture = "Heat", flow = { 0.1, -2.5 }, alpha = 1.3 },
+    bubbles    = { rate = 0, energyRate = 0 },
+    burst      = { texture = "Ember", buoyancy = 60, drag = 1.2 },
+    ambient    = {
+        { area = "surface", rate = 5, energyRate = 25, texture = "Ember", size = { 7, 12 }, life = { 0.6, 1.3 },
+          vx = { -10, 10 }, vy = { 20, 45 }, buoyancy = 30, drag = 1, twinkle = 5,
+          from = { 1.00, 0.90, 0.50 }, to = { 1.00, 0.25, 0.00 } },
+    },
+})
 
 Themes.Register("frost", {
     name = "Frost",
@@ -505,6 +534,136 @@ Themes.Register("frost", {
     absorbTo   = { 0.60, 0.90, 1.00 },
     levelFrom  = { 1.00, 1.00, 1.00 },
     levelTo    = { 0.50, 0.85, 1.00 },
+    -- Thick and slow, nearly frozen.
+    physics    = { stiffness = 60, damping = 7, coupling = 500, slosh = 0.1, ambient = 0.3 },
+    fillSpeed  = 0.7,
+    swirl      = { texture = "Frost", flow = { 0.3, 0 }, alpha = 1.1 },
+    bubbles    = { rate = 0, energyRate = 0 },
+    burst      = { texture = "Snow", buoyancy = -15, drag = 1.2, spin = { -2, 2 } },
+    ambient    = {
+        -- Ice crystals forming along the front.
+        { area = "front", rate = 3, energyRate = 6, texture = "Crystal", size = { 8, 14 }, life = { 1.5, 3 },
+          vx = { -2, 0 }, vy = { -1, 1 }, buoyancy = 0, drag = 3, grow = true, alpha = 0.8,
+          from = { 0.90, 1.00, 1.00 }, to = { 0.60, 0.85, 1.00 } },
+        -- Snow drifting down onto the bar.
+        { area = "above", rate = 1.2, texture = "Snow", size = { 7, 12 }, life = { 2.5, 4 },
+          vx = { 3, 10 }, vy = { -14, -8 }, buoyancy = 0, drag = 0.2, spin = { -1.5, 1.5 }, alpha = 0.8,
+          from = { 1.00, 1.00, 1.00 }, to = { 0.70, 0.90, 1.00 } },
+    },
+})
+
+Themes.Register("honey", {
+    name = "Honey",
+    fillA      = { 0.55, 0.30, 0.02 },
+    fillB      = { 1.00, 0.75, 0.20 },
+    lead       = { 1.00, 0.95, 0.75, 0.25 },
+    quest      = { 1.00, 0.38, 0.12, 1.00 }, -- both usual and alternate quest colours are too close to honey
+    questText  = "FF6120",
+    flash      = { 1.00, 0.80, 0.30 },
+    tip        = { 1.00, 0.95, 0.70 },
+    glow       = { 1.00, 0.80, 0.30 },
+    swirlA     = { 1.00, 0.90, 0.50 },
+    swirlB     = { 1.00, 0.70, 0.30 },
+    bubble     = { 1.00, 0.95, 0.70 },
+    splashFrom = { 1.00, 0.90, 0.50 },
+    splashTo   = { 0.90, 0.55, 0.05 },
+    absorbTo   = { 1.00, 0.75, 0.20 },
+    levelFrom  = { 1.00, 0.95, 0.70 },
+    levelTo    = { 0.95, 0.60, 0.10 },
+    -- Very slow and sticky, with big lazy waves.
+    physics    = { amplitude = 14, stiffness = 25, damping = 5, coupling = 250, slosh = 0.35, ambient = 0.5 },
+    fillSpeed  = 0.45,
+    swirl      = { texture = "Nebula", alpha = 0.9, flow = { 0.3, 0.05 } },
+    bubbles    = { rate = 0.3, energyRate = 3, rise = { 4, 8 }, size = { 5, 9 }, alpha = 0.7 },
+    burst      = { texture = "Glow", buoyancy = -30, drag = 2.5 }, -- drips that fall
+})
+
+Themes.Register("lava", {
+    name = "Lava",
+    fillA      = { 0.25, 0.02, 0.00 },
+    fillB      = { 1.00, 0.35, 0.00 },
+    lead       = { 1.00, 0.80, 0.50, 0.25 },
+    quest      = ALT_QUEST, questText = ALT_QUEST_TEXT,
+    flash      = { 1.00, 0.45, 0.10 },
+    tip        = { 1.00, 0.80, 0.30 },
+    glow       = { 1.00, 0.40, 0.05 },
+    swirlA     = { 1.00, 0.75, 0.20 },
+    swirlB     = { 1.00, 0.40, 0.05 },
+    bubble     = { 1.00, 0.60, 0.10 },
+    splashFrom = { 1.00, 0.90, 0.40 },
+    splashTo   = { 1.00, 0.25, 0.00 },
+    absorbTo   = { 1.00, 0.50, 0.10 },
+    levelFrom  = { 1.00, 0.90, 0.50 },
+    levelTo    = { 1.00, 0.30, 0.00 },
+    -- Heavy and slow; the cracks throb with heat.
+    physics    = { stiffness = 35, damping = 4, coupling = 350, slosh = 0.25, ambient = 0.7 },
+    fillSpeed  = 0.55,
+    swirl      = { texture = "Cracks", flow = { 0.15, 0 }, alpha = 1.4, pulse = 0.25, pulseRate = 0.35 },
+    bubbles    = { texture = "Glow", blend = "ADD", rate = 0.8, energyRate = 6, rise = { 5, 10 }, size = { 5, 9 }, alpha = 0.8 },
+    burst      = { texture = "Ember", buoyancy = -40, drag = 0.8 }, -- sparks that arc up and fall back
+    ambient    = {
+        { area = "surface", rate = 0.8, energyRate = 8, texture = "Mote", size = { 5, 9 }, life = { 0.5, 1 },
+          vx = { -15, 15 }, vy = { 30, 60 }, buoyancy = -80, drag = 0.5,
+          from = { 1.00, 0.90, 0.50 }, to = { 1.00, 0.30, 0.00 } },
+    },
+})
+
+Themes.Register("cosmic", {
+    name = "Cosmic",
+    fillA      = { 0.03, 0.02, 0.12 },
+    fillB      = { 0.30, 0.15, 0.55 },
+    bg         = { 0, 0, 0, 0.7 },
+    lead       = { 0.80, 0.80, 1.00, 0.25 },
+    flash      = { 0.60, 0.50, 1.00 },
+    tip        = { 0.80, 0.80, 1.00 },
+    glow       = { 0.50, 0.40, 1.00 },
+    swirlA     = { 0.60, 0.40, 1.00 },
+    swirlB     = { 0.30, 0.60, 1.00 },
+    splashFrom = { 1.00, 1.00, 1.00 },
+    splashTo   = { 0.60, 0.70, 1.00 },
+    absorbTo   = { 0.80, 0.80, 1.00 },
+    levelFrom  = { 1.00, 1.00, 1.00 },
+    levelTo    = { 0.60, 0.50, 1.00 },
+    swirl      = { texture = "Nebula", alpha = 1.6, flow = { 0.4, 0.1 } },
+    bubbles    = { rate = 0, energyRate = 0 },
+    burst      = { texture = "Star", twinkle = 5, buoyancy = 0, drag = 1.2 },
+    ambient    = {
+        -- Stars twinkling inside the liquid.
+        { area = "liquid", rate = 8, energyRate = 10, texture = "Mote", size = { 8, 14 }, life = { 1.5, 3 },
+          vx = { -1, 1 }, vy = { -1, 1 }, buoyancy = 0, drag = 1, twinkle = 1.5,
+          from = { 1.00, 1.00, 1.00 }, to = { 0.70, 0.80, 1.00 } },
+    },
+})
+
+Themes.Register("nature", {
+    name = "Nature",
+    fillA      = { 0.10, 0.30, 0.05 },
+    fillB      = { 0.45, 0.80, 0.20 },
+    lead       = { 0.90, 1.00, 0.75, 0.25 },
+    flash      = { 0.70, 1.00, 0.40 },
+    tip        = { 0.90, 1.00, 0.70 },
+    glow       = { 0.70, 1.00, 0.40 },
+    swirlA     = { 1.00, 1.00, 0.70 },
+    swirlB     = { 0.70, 1.00, 0.40 },
+    bubble     = { 0.90, 1.00, 0.80 },
+    splashFrom = { 0.60, 0.90, 0.30 },
+    splashTo   = { 0.90, 0.75, 0.20 },
+    absorbTo   = { 0.60, 0.90, 0.30 },
+    levelFrom  = { 0.80, 1.00, 0.50 },
+    levelTo    = { 0.90, 0.75, 0.20 },
+    swirl      = { texture = "Caustics", alpha = 0.7, flow = { 0.4, 0.2 } }, -- dappled sunlight
+    bubbles    = { rate = 0.3 },
+    burst      = { texture = "Leaf", blend = "BLEND", buoyancy = -12, drag = 1.5, spin = { -3, 3 } },
+    ambient    = {
+        -- Leaves drifting down onto the bar.
+        { area = "above", rate = 0.5, energyRate = 3, texture = "Leaf", blend = "BLEND", size = { 7, 11 },
+          life = { 2.5, 4 }, vx = { 4, 12 }, vy = { -12, -6 }, buoyancy = 0, drag = 0.2, spin = { -2, 2 },
+          from = { 0.60, 0.90, 0.30 }, to = { 0.90, 0.75, 0.20 } },
+        -- Specks of pollen glinting in the liquid.
+        { area = "liquid", rate = 1, texture = "Mote", size = { 6, 10 }, life = { 1, 2 },
+          vx = { -3, 3 }, vy = { 2, 6 }, buoyancy = 0, drag = 1, twinkle = 2,
+          from = { 1.00, 0.95, 0.60 }, to = { 1.00, 0.85, 0.30 } },
+    },
 })
 
 Themes.Register("void", {
@@ -518,10 +677,19 @@ Themes.Register("void", {
     glow       = { 0.60, 0.30, 1.00 },
     swirlA     = { 0.75, 0.50, 1.00 },
     swirlB     = { 0.40, 0.30, 1.00 },
-    bubble     = { 0.80, 0.70, 1.00 },
     splashFrom = { 0.70, 0.50, 1.00 },
     splashTo   = { 0.35, 0.15, 0.80 },
     absorbTo   = { 0.55, 0.30, 1.00 },
     levelFrom  = { 0.85, 0.70, 1.00 },
     levelTo    = { 0.40, 0.15, 0.90 },
+    physics    = { damping = 2.8, ambient = 1.4 },
+    swirl      = { texture = "Tendrils", flow = { -0.6, 0 }, alpha = 1.3 }, -- writhing back against the flow
+    bubbles    = { rate = 0, energyRate = 0 },
+    -- Instead of throwing motes out, the void pulls them in.
+    burst      = { texture = "Mote", mode = "attract", drag = 1.5 },
+    ambient    = {
+        { area = "above", mode = "attract", rate = 1.5, energyRate = 6, texture = "Glow", size = { 9, 15 },
+          life = { 1.5, 2.5 }, vx = { -10, 10 }, vy = { -5, 5 }, drag = 1.2,
+          from = { 0.60, 0.30, 1.00 }, to = { 0.20, 0.05, 0.50 } },
+    },
 })
