@@ -80,6 +80,8 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("swirl", "Magic Swirl", "Glowing veins drifting inside the liquid.")
     Checkbox("bubbles", "Bubbles", "Bubbles rising through the liquid.")
     Checkbox("sparkles", "Sparkles", "Motes thrown off by XP gains, quest turn-ins and level-ups.")
+    Checkbox("ambient", "Ambient Particles", "Embers, snow, spores, stars and the like from themes that have them.")
+    Checkbox("restedGlow", "Rested Glow", "A soft glow in the liquid while you have rested XP.")
     Checkbox("flash", "Level-Up Flash", "Flash the bar when you level up.")
 
     Header("Preview & Reset")

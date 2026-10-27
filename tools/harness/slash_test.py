@@ -62,7 +62,7 @@ print("  opened settings:", G.__openedCategory)
 
 print("== every setting toggled off and back on")
 for key in ["showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl",
-            "bubbles", "sparkles", "flash", "locked", "hideBlizzardBar", "resetOnReload", "showMaxLevel"]:
+            "bubbles", "sparkles", "ambient", "restedGlow", "flash", "locked", "hideBlizzardBar", "resetOnReload", "showMaxLevel"]:
     default = G.__settings[key].GetValue(G.__settings[key])
     lua.execute(f"__settings[{key!r}]:SetValue({str(not default).lower()})")
     step(f"{key}={not default}", "SlashCmdList.SMOOTHEXPERIENCEBAR('test')", 1)

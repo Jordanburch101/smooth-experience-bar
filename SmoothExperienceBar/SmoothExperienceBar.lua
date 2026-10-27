@@ -48,6 +48,8 @@ local DEFAULTS = {
     swirl = true,
     bubbles = true,
     sparkles = true,
+    ambient = true,
+    restedGlow = false,
     flash = true,
 }
 
@@ -198,6 +200,9 @@ end
 
 local function ApplyTheme()
     theme = ns.Themes.Get(db.theme)
+    if theme.Resolve then
+        theme = theme:Resolve() -- e.g. class or faction colours, known once the player has loaded
+    end
     bg:SetVertexColor(unpack(theme.bg))
     restedTex:SetVertexColor(unpack(theme.rested))
     questTex:SetVertexColor(unpack(theme.quest))
@@ -397,7 +402,7 @@ local function StepFill(dt)
         A.hold = A.hold - dt
     else
         -- Several pending level-ups speed the sweep up so it never feels stuck.
-        local rate = ANIM.rate * db.speed * (1 + max(0, A.wraps - 1) * 0.5)
+        local rate = ANIM.rate * db.speed * (theme.fillSpeed or 1) * (1 + max(0, A.wraps - 1) * 0.5)
         A.fill = Approach(A.fill, wrapping and 1 + ANIM.overshoot or target, dt, rate)
     end
 
@@ -466,6 +471,7 @@ local function Refresh()
         cur, mx, quest, rested = 1, 1, 0, 0 -- a full bottle
     end
     bar:Show()
+    liquid:SetRested(rested > 0)
     if maxed ~= wasMaxed then UpdateSessionTexts() end
 
     if not A.ready or level < T.level or maxed ~= wasMaxed then
@@ -701,6 +707,7 @@ local SETTING_APPLY = {
     waves = function() liquid:ApplyOptions() end,
     bubbles = function() liquid:ApplyOptions() end,
     sparkles = function() liquid:ApplyOptions() end,
+    ambient = function() liquid:ApplyOptions() end,
 }
 
 function Core.OnSettingChanged(key)
@@ -809,6 +816,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
             or time() - cdb.startTime >= SESSION_MAX_AGE then
             ResetSession()
         end
+        if ns.Themes.Get(db.theme).Resolve then ApplyTheme() end
         ApplyBlizzardBar()
         if isLogin or isReload then
             RequestPlayed()

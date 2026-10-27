@@ -87,6 +87,7 @@ function Region:SetGradient(_, c1, c2)
 end
 function Region:SetBlendMode(m) self.blend = m end
 function Region:SetTexCoord(l, r, t, b) self.tc = { l, r, t, b } end
+function Region:SetRotation(rad) self.rotation = rad end
 function Region:SetDrawLayer(layer, sub) self.layer, self.sub = layer, sub or 0 end
 function Region:SetSnapToPixelGrid() end
 function Region:SetTexelSnappingBias() end
