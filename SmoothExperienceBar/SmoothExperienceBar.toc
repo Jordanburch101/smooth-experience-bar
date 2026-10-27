@@ -3,6 +3,7 @@
 ## Notes: Lightweight experience bar with smooth fill animation, completed quest XP and rested XP. Layout based on the Luxthos Experience Bar WeakAura.
 ## Author: Jordan
 ## Version: 0.3.0
+## IconTexture: Interface\Icons\INV_Scroll_10
 ## SavedVariables: SmoothExperienceBarDB
 ## SavedVariablesPerCharacter: SmoothExperienceBarCharDB
 
