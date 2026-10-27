@@ -324,7 +324,8 @@ def make_icon(path):
     except ImportError:
         print("Pillow not installed, Icon.tga not regenerated")
         return
-    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "branding", "smooth-experience-bar-64.png")
+    # The game's original with its border, which suits the in-game addon list.
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "branding", "icon-original-64.png")
     im = Image.open(src).convert("RGBA").resize((64, 64))
     px = im.load()
     write_tga(path, 64, 64, lambda x, y: tuple(c / 255 for c in px[x, y]))
