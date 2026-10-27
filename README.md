@@ -1,4 +1,4 @@
-<p align="center"><img src="branding/gallery/hero.gif" alt="Smooth Experience Bar: an experience bar whose fill flows like liquid as XP is gained, a quest is turned in and the character levels up"></p>
+<p align="center"><img src="https://i.imgur.com/CXmiqn6.gif" alt="Smooth Experience Bar: an experience bar whose fill flows like liquid as XP is gained, a quest is turned in and the character levels up"></p>
 
 <p align="center">
   <a href="https://www.curseforge.com/wow/addons/smooth-experience-bar">Get the addon</a> ·
