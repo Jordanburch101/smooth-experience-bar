@@ -8,6 +8,10 @@ broken and now works. Leave out internal changes. Sections are
 
 ## 1.0.1
 
+### New
+- The front of the liquid is smoother, with a soft glowing edge instead of
+  a hard stepped line, and the magic inside reaches right up to it.
+
 ### Fixed
 - A dark gap no longer flickers in front of the liquid while it flows into
   completed quest XP or rested XP after a big gain.

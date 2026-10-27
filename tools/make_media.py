@@ -230,6 +230,29 @@ def make_frost(path, w=256, h=64):
     write_field(path, w, h, field)
 
 
+EDGE_CORE = 0.7  # where the bright line sits across the edge texture; Liquid.lua matches it
+
+
+def make_edge(path, w=32, h=48):
+    """Soft bright line along the liquid front, one per slice.
+
+    Across: a sharp core with a soft glow into the liquid and a quick fade out of it.
+    Down: ramp, flat, ramp in thirds. Neighbouring slices overlap on the ramps, which sum to 1,
+    so the line blends between slices instead of stepping.
+    """
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        d = u - EDGE_CORE
+        a = math.exp(-(abs(d) / 0.18) ** 4) + 0.3 * math.exp(-(d / 0.35) ** 2)
+        if d > 0:
+            a *= max(0.0, 1 - d / (1 - EDGE_CORE))
+        k = min(1.0, v * 3, (1 - v) * 3)
+        return 1, 1, 1, min(1.0, a) * math.sin(k * math.pi / 2) ** 2
+
+    write_tga(path, w, h, pixel)
+
+
 def make_ember(path, size=32):
     """Teardrop flame: wide and bright at the bottom, thin at the top."""
 
@@ -357,6 +380,7 @@ def main():
     make_bubble(os.path.join(out, "Bubble.tga"))
     make_mote(os.path.join(out, "Mote.tga"))
     make_glow(os.path.join(out, "Glow.tga"))
+    make_edge(os.path.join(out, "Edge.tga"))
     make_ember(os.path.join(out, "Ember.tga"))
     make_snow(os.path.join(out, "Snow.tga"))
     make_leaf(os.path.join(out, "Leaf.tga"))

@@ -16,6 +16,8 @@ local CFG = {
     energyDecay = 0.8,     -- per second
     bubbles     = 20,      -- pool sizes
     motes       = 64,
+    edgeW       = 6,       -- width of the bright line texture along the front, px
+    edgeCore    = 0.7,     -- where the line sits across Edge.tga (EDGE_CORE in make_media.py)
 }
 
 -- Defaults for the theme tables of the same name. A theme only lists what it changes.
@@ -118,12 +120,10 @@ function Liquid.New(parent, width, height, theme, opts)
         row:SetHeight(self.rowH)
         self.rows[i] = row
 
-        local tip = Tex("ARTWORK", 6, nil, "ADD")
-        tip:SetSize(3, self.rowH)
-        self.tips[i] = tip
-
+        self.tips[i] = Tex("ARTWORK", 6, MEDIA .. "Edge", "ADD")
         self.pos[i], self.vel[i] = 0, 0
     end
+    self:LayoutTips()
 
     self.swirlA = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
     self.swirlA:SetPoint("TOPLEFT")
@@ -199,13 +199,30 @@ function Liquid:SetTheme(theme)
     end
 end
 
+-- Each slice's line is 1.5 slices tall so it overlaps its neighbours on Edge.tga's ramps.
+-- The first and last drop their outer ramp so the line stays inside the bar.
+function Liquid:LayoutTips()
+    local rowH, n = self.rowH, CFG.rows
+    for i, tip in ipairs(self.tips) do
+        local top, h, v0, v1 = rowH * 0.25, rowH * 1.5, 0, 1
+        if i == 1 then
+            top, h, v0 = 0, rowH * 1.25, 1 / 3
+        elseif i == n then
+            h, v1 = rowH * 1.25, 2 / 3
+        end
+        tip:SetSize(CFG.edgeW, h)
+        tip:SetTexCoord(0, 1, v0, v1)
+        tip.dy = top
+    end
+end
+
 function Liquid:SetSize(width, height)
     self.width, self.height = width, height
     self.rowH = height / CFG.rows
     for i = 1, CFG.rows do
         self.rows[i]:SetHeight(self.rowH)
-        self.tips[i]:SetSize(3, self.rowH)
     end
+    self:LayoutTips()
     self.glow:SetSize(36, height * 1.7)
 end
 
@@ -616,7 +633,7 @@ function Liquid:Draw(dt)
             row:SetWidth(rw)
             row:Show()
             if right < w - 1 then
-                tip:SetPoint("TOPLEFT", parent, "TOPLEFT", right - 2, y)
+                tip:SetPoint("TOPLEFT", parent, "TOPLEFT", right - 0.5 - CFG.edgeCore * CFG.edgeW, y + tip.dy)
                 tip:SetAlpha(min(1, tipAlpha + abs(self.vel[i]) * 0.01))
                 tip:Show()
             else
@@ -629,7 +646,7 @@ function Liquid:Draw(dt)
 
     -- Magic veins drift with the theme's flow; faster and brighter with energy and fill speed.
     local sw = self.swirl
-    local swirlW = max(0, min(edge - amp * 0.5, self.back))
+    local swirlW = self.back
     if swirlW >= 1 and opts.swirl then
         local flow = 0.015 + 0.12 * energy + max(0, self.speed) / 2000
         local fu, fv = sw.flow[1], sw.flow[2]
