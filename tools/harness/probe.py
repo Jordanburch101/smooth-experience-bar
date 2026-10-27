@@ -5,7 +5,10 @@ Usage: python probe.py <addon dir> <theme> [seconds]
 import os
 import sys
 
-from lupa.luajit21 import LuaRuntime
+try:
+    from lupa.luajit21 import LuaRuntime
+except ImportError:  # some builds of lupa ship without LuaJIT
+    from lupa.lua51 import LuaRuntime
 
 ADDON, THEME = sys.argv[1], sys.argv[2]
 SECONDS = float(sys.argv[3]) if len(sys.argv) > 3 else 3

@@ -1,0 +1,82 @@
+# On a version tag (v1.0.0, v1.1.0-beta, ...): tests, release build, then a
+# GitHub release with the zip. Tags with "alpha" or "beta" are marked as
+# pre-releases. The release notes are the version's section of CHANGELOG.md
+# (scripts/changelog.sh); the run fails if it has none.
+#
+# CurseForge upload, skipped until these are set in the repo settings
+# (Settings > Secrets and variables > Actions):
+#   secret   CF_API_TOKEN      from https://legacy.curseforge.com/account/api-tokens
+#   variable CF_PROJECT_ID     the project ID shown on the CurseForge project page
+# The game versions come from "## Interface" in the toc. A CF_GAME_VERSIONS
+# variable, if set, overrides them. Run the "CurseForge check" workflow to
+# test without uploading.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Before anything else, so a tag without notes fails at once.
+      - name: Release notes
+        run: bash scripts/changelog.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LuaJIT and lupa
+        run: |
+          sudo apt-get update && sudo apt-get install -y luajit
+          pip install lupa
+
+      - name: Tests
+        run: python tools/harness/slash_test.py SmoothExperienceBar
+
+      - name: Release build
+        id: package
+        shell: pwsh
+        run: ./scripts/package.ps1
+
+      - name: Release type
+        id: type
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *alpha*) echo "type=alpha" >> "$GITHUB_OUTPUT" ;;
+            *beta*)  echo "type=beta" >> "$GITHUB_OUTPUT" ;;
+            *)       echo "type=release" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          if [ "${{ steps.type.outputs.type }}" != "release" ]; then flags="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" "${{ steps.package.outputs.zip }}" \
+            --title "Smooth Experience Bar ${{ steps.package.outputs.version }}" \
+            --notes-file "$RUNNER_TEMP/notes.md" $flags
+
+      - name: CurseForge upload
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
+          CF_GAME_VERSIONS: ${{ vars.CF_GAME_VERSIONS }}
+        run: |
+          if [ -z "$CF_API_TOKEN" ] || [ -z "$CF_PROJECT_ID" ]; then
+            echo "CurseForge upload not configured, skipping."
+            exit 0
+          fi
+          bash scripts/curseforge.sh upload "${{ steps.package.outputs.zip }}" \
+            "Smooth Experience Bar ${{ steps.package.outputs.version }}" "${{ steps.type.outputs.type }}" \
+            "$(cat "$RUNNER_TEMP/notes.md")"

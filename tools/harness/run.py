@@ -9,7 +9,10 @@ import os
 import sys
 
 import numpy as np
-from lupa.luajit21 import LuaRuntime
+try:
+    from lupa.luajit21 import LuaRuntime
+except ImportError:  # some builds of lupa ship without LuaJIT
+    from lupa.lua51 import LuaRuntime
 from PIL import Image, ImageDraw, ImageFont
 
 ADDON, OUT = sys.argv[1], sys.argv[2]

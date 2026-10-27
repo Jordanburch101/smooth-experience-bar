@@ -2,7 +2,7 @@
 ## Title: Smooth Experience Bar
 ## Notes: A lightweight standalone take on the Luxthos Experience Bar WeakAura, with quest and rested XP, session stats and optional themes.
 ## Author: Jordan
-## Version: 1.0.0
+## Version: @project-version@
 ## IconTexture: Interface\AddOns\SmoothExperienceBar\Media\Icon
 ## SavedVariables: SmoothExperienceBarDB
 ## SavedVariablesPerCharacter: SmoothExperienceBarCharDB

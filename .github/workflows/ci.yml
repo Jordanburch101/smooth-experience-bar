@@ -1,0 +1,46 @@
+# On every push to main and every pull request: the tests against the WoW
+# mock, then a release build, uploaded as an artifact you can download and
+# drop into Interface/AddOns to try.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to a pull request stops its older run; pushes to main finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags, for the version from git describe
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LuaJIT and lupa
+        run: |
+          sudo apt-get update && sudo apt-get install -y luajit
+          pip install lupa
+
+      - name: Tests
+        run: python tools/harness/slash_test.py SmoothExperienceBar
+
+      - name: Release build
+        id: package
+        shell: pwsh
+        run: ./scripts/package.ps1
+
+      # The artifact is zipped by GitHub, so upload the folder: the download
+      # then holds SmoothExperienceBar/ ready to drop into Interface/AddOns.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmoothExperienceBar-${{ steps.package.outputs.version }}
+          path: build/

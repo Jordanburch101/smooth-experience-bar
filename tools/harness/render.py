@@ -8,7 +8,10 @@ import os
 import re
 
 import numpy as np
-from lupa.luajit21 import LuaRuntime
+try:
+    from lupa.luajit21 import LuaRuntime
+except ImportError:  # some builds of lupa ship without LuaJIT
+    from lupa.lua51 import LuaRuntime
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
