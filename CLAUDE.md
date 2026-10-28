@@ -13,8 +13,9 @@ The README covers the layout and tools; this file holds the rules.
 - **Tests:** run `tools/venv/Scripts/python tools/harness/slash_test.py SmoothExperienceBar` before every
   commit; it exits 1 on any failed check. The mock (`tools/harness/wowmock.lua`) should be as strict as the
   client: when the client rejects something the mock accepted, make the mock reject it too.
-- **Visual changes:** render a preview (`tools/harness/run.py`) and look at it. Rebuild the gallery
-  (`tools/harness/gallery.py`) when the look changes.
+- **Visual changes:** render a preview (`tools/harness/run.py`) and look at it. Whenever the look or the
+  animation changes, rebuild the gallery (`tools/harness/gallery.py`; it rewrites every image in
+  `branding/gallery/`, including `hero.gif`) and commit the images with the change.
 - **Commits:** stage the files you changed by name, never `git add -A`; the folder can hold files that are
   not part of the repo. Commit messages are plain and professional.
 - **Changelog:** add player-facing notes to `CHANGELOG.md` under the next version as features land
