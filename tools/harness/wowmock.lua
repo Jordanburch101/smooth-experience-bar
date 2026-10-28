@@ -169,6 +169,10 @@ function Color:GetRGBA() return self.r, self.g, self.b, self.a end
 function CreateColor(r, g, b, a) return setmetatable({ r = r, g = g, b = b, a = a or 1 }, Color) end
 
 __player.class, __player.faction = "PALADIN", "Alliance"
+__player.name, __player.realm = "Testchar", "Mockrealm"
+-- Like the client, UnitName gives no realm for your own character; GetRealmName has it.
+function UnitName(unit) if unit == "player" then return __player.name, nil end end
+function GetRealmName() return __player.realm end
 function UnitClass() return "Paladin", __player.class end
 function UnitFactionGroup() return __player.faction end
 RAID_CLASS_COLORS = {

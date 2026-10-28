@@ -39,6 +39,7 @@ Open the settings with `/seb`, by right-clicking the bar, or from Options > AddO
 - Change the fill speed, or switch the liquid waves, swirl, bubbles, sparkles, ambient particles, lightning
   and level-up flash on and off.
 - Turn on Glass for a glass tube that reflects the liquid, and Rounded Liquid for rounded ends.
+- Settings are saved per character; copy another character's from the Profile section.
 - Preview XP gains, quest turn-ins and level-ups without touching your real XP.
 
 ![Fire, Frost, Honey, Lava, Cosmic, Nature and Void effect themes, each with its own particles](branding/gallery/effects.png)

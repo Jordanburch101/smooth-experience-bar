@@ -74,7 +74,7 @@ for item in items:
     print(f"  {item.kind:9} {item.key or item.name or item.text}")
 check(G.__settingsCategory.name == "Smooth Experience Bar", "category registered")
 check(any(i.kind == "dropdown" and i.key == "theme" for i in items), "theme dropdown")
-check(sum(1 for i in items if i.kind == "button") == 6, "six buttons")
+check(sum(1 for i in items if i.kind == "button") == 7, "seven buttons")
 
 print("== slash commands")
 lua.execute("__openedCategory = nil")
@@ -162,7 +162,7 @@ row_h = lua.eval("""function()
         end
     end
 end""")()
-db = G.SmoothExperienceBarDB
+db = G.SmoothExperienceBarDB.profiles["Testchar - Mockrealm"]  # settings are per character
 check((db.width, db.height) == (900, 45), "resized size saved")
 check(row_h == 3, "liquid slices follow the new height")
 lua.execute("__settings.width:SetValue(50); __settings.height:SetValue(500)")
@@ -208,6 +208,34 @@ print("== max level")
 lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('test off'); __player.level = 70; __player.xp = 0")
 check(step("showMaxLevel off", "__fire('PLAYER_XP_UPDATE', 'player')").startswith("[hidden]"), "hidden at max level")
 check("Max Level" in step("showMaxLevel on", "__settings.showMaxLevel:SetValue(true)"), "full bar at max level")
+
+print("== per-character profiles")
+# A fresh client session whose saved settings come from before profiles, when they were account-wide.
+lua2 = LuaRuntime(unpack_returned_tuples=True)
+lua2.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
+lua2.execute("SmoothExperienceBarDB = { theme = 'fel', width = 820, glass = true, layout = 2, point = { 'TOP', 'UIParent', 'TOP', 0, -90 } }")
+G2 = lua2.globals()
+G2.__loadAddon(ADDON.replace("\\", "/"), "SmoothExperienceBar")
+lua2.execute("__fire('ADDON_LOADED', 'SmoothExperienceBar'); __fire('PLAYER_ENTERING_WORLD', true, false)")
+mine = lua2.eval("SmoothExperienceBarDB.profiles['Testchar - Mockrealm']")
+check(mine is not None and mine.theme == "fel" and mine.width == 820 and mine.glass,
+      "old account-wide settings carried into this character's profile")
+check(lua2.eval("SmoothExperienceBarDB.theme") is None and lua2.eval("SmoothExperienceBarDB.legacy.theme") == "fel",
+      "old settings moved out of the top level and kept for other characters")
+copy_dd = [i for i in lua2.eval("__settingsLayout").values() if i.kind == "dropdown" and i.key == "copyFrom"]
+check(copy_dd and copy_dd[0].options[1].label == "No other characters yet", "copy list says when there is no one to copy")
+lua2.execute("SmoothExperienceBarDB.profiles['Alt - Mockrealm'] = { theme = 'frost', width = 640, glass = false, lightning = false }")
+lua2.execute("__settings.copyFrom:SetValue('Alt - Mockrealm')")
+button = [i for i in lua2.eval("__settingsLayout").values() if i.kind == "button" and i.name == "Copy Settings"]
+check(bool(button), "copy button on the settings page")
+button[0].onClick()
+for _ in range(30):
+    G2.__step(1 / 60)
+check(mine.theme == "frost" and mine.width == 640 and not mine.glass and not mine.lightning,
+      "copying another character's profile replaces this character's settings")
+check(G2.SmoothExperienceBarFrame.w == 640, "copied size applied to the bar")
+check(G2.__settings.theme.GetValue(G2.__settings.theme) == "frost", "settings page shows the copied values")
+check(any("Copied settings from Alt - Mockrealm" in m for m in G2.__chat.values()), "copy confirmed in chat")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

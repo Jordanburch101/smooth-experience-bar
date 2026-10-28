@@ -6,6 +6,15 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.1.2
+
+### New
+- Settings are now saved per character, so each character can have its
+  own theme, position, size and effects. Your current settings carry over
+  to every character the first time it logs in.
+- Copy another character's settings from the new Profile section of the
+  settings page.
+
 ## 1.1.1
 
 ### New

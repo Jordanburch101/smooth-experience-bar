@@ -14,12 +14,15 @@ local function Header(text)
     end
 end
 
+local registered = {}
+
 local function Register(key, name)
     local default = defaults[key]
     local setting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_" .. key, key, db, type(default), name, default)
     setting:SetValueChangedCallback(function(_, value)
         ns.Core.OnSettingChanged(key, value)
     end)
+    registered[key] = setting
     return setting
 end
 
@@ -87,6 +90,26 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("glass", "Glass", "Reflections along the bar, as if it were a glass tube.")
     Checkbox("rounding", "Rounded Liquid", "Shade the top and bottom of the bar so the liquid looks round.")
 
+    -- Settings are saved per character. Pick another character, then copy their settings onto this one.
+    Header("Profile")
+    local copy = { copyFrom = "" }
+    local copySetting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_copyFrom", "copyFrom", copy, "string",
+        "Copy Settings From", "")
+    Settings.CreateDropdown(category, copySetting, function()
+        local container = Settings.CreateControlTextContainer()
+        local others = Core.OtherProfiles()
+        if #others == 0 then
+            container:Add("", "No other characters yet")
+        end
+        for _, key in ipairs(others) do
+            container:Add(key, key)
+        end
+        return container:GetData()
+    end, "Settings are saved per character (this is " .. Core.ProfileKey() .. "). Pick another character here, then press Copy.")
+    Button("Copy Settings", "Copy", function()
+        if copy.copyFrom ~= "" then Core.CopyProfile(copy.copyFrom) end
+    end, "Replace this character's settings with the chosen character's.")
+
     Header("Preview & Reset")
     Button("Preview XP Gain", "Gain", function() Core.Test("gain") end, "Simulate an XP gain. Does not touch your real XP.")
     Button("Preview Quest Turn-In", "Turn In", function() Core.Test("turnin") end, "Simulate completing and turning in a quest.")
@@ -96,6 +119,13 @@ function Options.Register(savedDB, defaultValues)
     Button("Reset Session", "Reset", Core.ResetSession, "Restart session time and XP/hour.")
 
     Settings.RegisterAddOnCategory(category)
+end
+
+-- After the values changed underneath the page (a copied profile), push them to its controls.
+function Options.Refresh()
+    for key, setting in pairs(registered) do
+        setting:SetValue(db[key])
+    end
 end
 
 function Options.Open()

@@ -29,7 +29,9 @@ local ANIM = {
 
 local SESSION_MAX_AGE = 86400 * 3
 
--- Saved in SmoothExperienceBarDB. Everything except point/layout is on the settings page.
+-- Saved per character, as that character's profile in SmoothExperienceBarDB.profiles (keyed
+-- "Name - Realm"), so any character can copy another's. Everything except point/layout is on the
+-- settings page.
 local DEFAULTS = {
     point = { "TOP", "UIParent", "TOP", 0, -40 },
     theme = "luxthos",
@@ -838,6 +840,56 @@ function Core.ResetPosition()
     ApplyPosition()
 end
 
+-- Profiles: every character's settings, keyed "Name - Realm".
+local profiles, profileKey
+
+local function CopyValue(v)
+    return type(v) == "table" and { unpack(v) } or v
+end
+
+-- Re-apply every setting, after the profile's values changed underneath them.
+local function ApplyAll()
+    if not ns.Themes.list[db.theme] then db.theme = DEFAULTS.theme end
+    liquid:SetOptions(db)
+    ApplyTheme()
+    ApplyRounding()
+    ApplyScale()
+    ApplySize()
+    ApplyPosition()
+    ApplyLock()
+    ApplyBlizzardBar()
+    UpdateSessionTexts()
+    RenderText(true)
+end
+
+function Core.ProfileKey()
+    return profileKey
+end
+
+-- Other characters' profiles, sorted, for the settings page.
+function Core.OtherProfiles()
+    local keys = {}
+    for key in pairs(profiles or {}) do
+        if key ~= profileKey then keys[#keys + 1] = key end
+    end
+    table.sort(keys)
+    return keys
+end
+
+-- Copy another character's settings onto this character and apply them.
+function Core.CopyProfile(key)
+    local src = profiles and profiles[key]
+    if not src or key == profileKey then return false end
+    for k, v in pairs(DEFAULTS) do
+        if src[k] == nil then db[k] = CopyValue(v) else db[k] = CopyValue(src[k]) end
+    end
+    db.layout = src.layout
+    ApplyAll()
+    ns.Options.Refresh()
+    DEFAULT_CHAT_FRAME:AddMessage("|cffa070ffSmoothXP|r Copied settings from " .. key .. ".")
+    return true
+end
+
 function Core.ResetSession()
     ResetSession()
     UpdateSessionTexts()
@@ -898,7 +950,24 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         if arg1 ~= ADDON_NAME then return end
         SmoothExperienceBarDB = SmoothExperienceBarDB or {}
         SmoothExperienceBarCharDB = SmoothExperienceBarCharDB or {}
-        db, cdb = SmoothExperienceBarDB, SmoothExperienceBarCharDB
+        local root = SmoothExperienceBarDB
+        -- Settings used to be shared by the whole account. Keep them as the starting point for each
+        -- character's own profile, so nobody loses their setup on updating.
+        if not root.profiles then
+            local legacy = {}
+            for k, v in pairs(root) do legacy[k] = v end
+            wipe(root)
+            root.profiles = {}
+            if next(legacy) then root.legacy = legacy end
+        end
+        profiles = root.profiles
+        profileKey = (UnitName("player") or "Unknown") .. " - " .. (GetRealmName() or "Unknown")
+        if not profiles[profileKey] then
+            local profile = {}
+            for k, v in pairs(root.legacy or {}) do profile[k] = CopyValue(v) end
+            profiles[profileKey] = profile
+        end
+        db, cdb = profiles[profileKey], SmoothExperienceBarCharDB
         if db.layout ~= LAYOUT_VERSION then
             db.point = nil
             db.layout = LAYOUT_VERSION
