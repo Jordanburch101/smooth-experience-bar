@@ -79,7 +79,7 @@ function Region:SetScript(name, fn) self.scripts[name] = fn end
 function Region:RegisterEvent(e) self.events[e] = true end
 function Region:UnregisterEvent(e) self.events[e] = nil end
 function Region:IsEventRegistered(e) return self.events[e] end
-function Region:SetTexture(file, wh) self.file, self.wrap, self.color = file, wh, nil end
+function Region:SetTexture(file, wh, wv) self.file, self.wrap, self.wrapV, self.color = file, wh, wv or wh, nil end
 function Region:SetColorTexture(r, g, b, a) self.file, self.color = "SOLID", { r, g, b, a or 1 } end
 function Region:SetVertexColor(r, g, b, a) self.vc, self.grad = { r, g, b, a or 1 }, nil end
 function Region:SetGradient(_, c1, c2)
@@ -103,6 +103,29 @@ function Region:GetStringWidth()
     return #plain * (self.fontSize or 12) * 0.55
 end
 function Region:CreateTexture(_, layer, _, sub) return NewRegion("Texture", self, layer, sub) end
+function Region:CreateMaskTexture(_, layer, _, sub) return NewRegion("MaskTexture", self, layer, sub) end
+function Region:GetObjectType() return self.kind end
+function Region:GetRegions()
+    local out = {}
+    for _, r in ipairs(__regions) do
+        if r.parent == self and r.kind ~= "Frame" then out[#out + 1] = r end
+    end
+    return unpack(out)
+end
+-- Masks: as in the client, only textures take them, only mask textures can be one, and a texture
+-- cannot take the same mask twice.
+function Region:AddMaskTexture(mask)
+    assert(self.kind == "Texture", "AddMaskTexture on a " .. self.kind)
+    assert(mask and mask.kind == "MaskTexture", "AddMaskTexture needs a MaskTexture")
+    self.masks = self.masks or {}
+    for _, m in ipairs(self.masks) do assert(m ~= mask, "mask already added") end
+    self.masks[#self.masks + 1] = mask
+end
+function Region:RemoveMaskTexture(mask)
+    for i, m in ipairs(self.masks or {}) do
+        if m == mask then table.remove(self.masks, i) return end
+    end
+end
 function Region:CreateFontString(_, layer) return NewRegion("FontString", self, layer, 0) end
 
 -- Rect relative to the region's parent, top-left origin, y down.

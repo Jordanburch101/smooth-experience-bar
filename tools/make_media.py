@@ -294,6 +294,195 @@ def make_core(path, w=256, h=64):
     write_tga(path, w, h, pixel)
 
 
+def make_bolt(path, w=256, rows=8, rh=32):
+    """Lightning crawling through cloud, for inside the liquid: `rows` variants stacked, each running
+    left to right, so each stroke of a flash can take a new shape.
+
+    A jagged main arc from midpoint displacement whose brightness wanders along its length, as if parts
+    of it were behind cloud, with branches that thin out to nothing at their tips. Thin core, faint halo;
+    the bloom around it is drawn separately.
+    """
+    rnd = random.Random(180)
+
+    def arc(x0, y0, x1, y1, amp, depth, lo, hi):
+        pts = [(x0, y0), (x1, y1)]
+        for _ in range(depth):
+            out = [pts[0]]
+            for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+                my = (ay + by) / 2 + (rnd.random() - 0.5) * 2 * amp
+                out += [((ax + bx) / 2, max(lo, min(hi, my))), (bx, by)]
+            pts, amp = out, amp * 0.75
+        return pts
+
+    values = []
+    for r in range(rows):
+        top = r * rh
+        lo, hi = top + 4, top + rh - 4
+        mid = top + rh / 2
+        main = arc(2, mid + rnd.uniform(-5, 5), w - 2, mid + rnd.uniform(-5, 5), rh * 0.3, 7, lo, hi)
+        waves = [(rnd.uniform(1, 4), rnd.uniform(0, 6.28)) for _ in range(3)]
+
+        def along(x):  # brightness along the arc: dips where it passes behind cloud
+            s = sum(math.sin(x / w * f * 6.28 + p) for f, p in waves) / 3
+            return 0.3 + 0.7 * (0.5 + 0.5 * s) ** 1.5
+
+        segs = [(p, q, along((p[0] + q[0]) / 2)) for p, q in zip(main, main[1:])]
+
+        def branch(sx, sy, k0, length, depth):
+            ex = sx + rnd.choice((1, 1, -1)) * length
+            ey = max(lo, min(hi, sy + rnd.choice((-1, 1)) * rnd.uniform(4, rh * 0.35)))
+            pts = arc(sx, sy, ex, ey, rh * 0.15, 5, lo, hi)
+            n = len(pts) - 1
+            for j, (p, q) in enumerate(zip(pts, pts[1:])):
+                segs.append((p, q, k0 * (1 - j / n) ** 1.3))  # thins out toward the tip
+            if depth > 0:
+                for _ in range(2):
+                    j = rnd.randrange(n // 4, n * 3 // 4)
+                    branch(*pts[j], k0 * 0.6 * (1 - j / n), length * 0.45, depth - 1)
+
+        for _ in range(4):
+            j = rnd.randrange(16, len(main) - 16)
+            sx, sy = main[j]
+            branch(sx, sy, 0.8 * along(sx), rnd.uniform(25, 60), 1)
+        values.append(segs)
+
+    def seg_dist(px, py, ax, ay, bx, by):
+        vx, vy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy or 1)))
+        return math.hypot(px - ax - vx * t, py - ay - vy * t)
+
+    h = rows * rh
+    field = [[0.0] * w for _ in range(h)]
+    for r, segs in enumerate(values):
+        for y in range(r * rh, (r + 1) * rh):
+            for x in range(w):
+                a = 0.0
+                for (ax, ay), (bx, by), k in segs:
+                    if abs(ay - y) > 8 and abs(by - y) > 8:
+                        continue
+                    d = seg_dist(x + 0.5, y + 0.5, ax, ay, bx, by)
+                    a = max(a, k * (math.exp(-(d / 1.0) ** 2) + 0.2 * math.exp(-(d / 2.5) ** 2)))
+                fade = min(1.0, x / 20, (w - 1 - x) / 20)  # arcs thin out at their ends
+                field[y][x] = min(1.0, a) * fade
+    write_tga(path, w, h, lambda x, y: (1, 1, 1, field[y][x]))
+
+
+def make_shade(path, w=4, h=64):
+    """Darkens the top and bottom of the bar like light falling off a glass cylinder.
+
+    Drawn black over everything inside the bar; slightly heavier at the bottom.
+    """
+
+    def pixel(x, y):
+        v = (y + 0.5) / h
+        c = 2 * v - 1
+        dark = (1 - math.sqrt(max(0.0, 1 - c * c))) ** 0.8
+        return 1, 1, 1, 0.5 * dark * (1 + 0.3 * c)
+
+    write_tga(path, w, h, pixel)
+
+
+def make_glass_light(path, w=256, h=64):
+    """Light on the glass tube, drawn additively over the bar and split at the liquid front so the part
+    over the liquid can take its colour.
+
+    A highlight near the top with a narrow core and a soft halo, broken into pieces of varying brightness
+    the way a real reflection is; a faint one near the bottom; and bright outer rims, strongest on top.
+    The tube's ends are GlassCap.tga.
+    """
+    rnd = random.Random(190)
+    waves_top = [(rnd.uniform(1.5, 5), rnd.uniform(0, 6.28)) for _ in range(3)]
+    waves_low = [(rnd.uniform(1, 3), rnd.uniform(0, 6.28)) for _ in range(2)]
+
+    def pieces(u, waves, cut):  # 0 in the gaps, up to 1 in the brightest stretches
+        n = 0.5 + 0.5 * sum(math.sin(u * f * 6.28 + p) for f, p in waves) / len(waves)
+        return max(0.0, (n - cut) / (1 - cut)) ** 0.7
+
+    def band(v, centre, width):
+        return math.exp(-((v - centre) / width) ** 2)
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        top = pieces(u, waves_top, 0.3) * (0.6 * band(v, 0.2, 0.028) + 0.16 * band(v, 0.22, 0.09))
+        low = pieces(u, waves_low, 0.4) * 0.14 * band(v, 0.84, 0.04)
+        rim = 0.5 * band(v, 0.015, 0.022) + 0.25 * band(v, 0.985, 0.022)
+        return 1, 1, 1, min(1.0, top + low + rim)
+
+    write_tga(path, w, h, pixel)
+
+
+def make_glass_dark(path, w=4, h=64):
+    """Thin dark lines just inside the rims, where the glass is seen edge on: gives the tube thickness.
+
+    Drawn black over the bar.
+    """
+
+    def pixel(x, y):
+        v = (y + 0.5) / h
+        return 1, 1, 1, 0.4 * math.exp(-((v - 0.055) / 0.022) ** 2) + 0.35 * math.exp(-((v - 0.945) / 0.022) ** 2)
+
+    write_tga(path, w, h, pixel)
+
+
+def make_glass_cap(path, w=32, h=64):
+    """Light on the left end of the tube (mirrored for the right). Seen from the side a tube's end is
+    straight, so this matches the top and bottom: a bright rim along the very end, strongest at the top.
+    """
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        return 1, 1, 1, 0.45 * math.exp(-((u - 0.03) / 0.044) ** 2) * (1 - 0.45 * v)
+
+    write_tga(path, w, h, pixel)
+
+
+def make_glass_cap_dark(path, w=32, h=64):
+    """Shadow on the left end of the tube (mirrored for the right): a thin dark line just inside the rim
+    for the glass's thickness, like GlassDark.tga along the top and bottom, and a slight darkening toward
+    the end. Drawn black.
+    """
+
+    def pixel(x, y):
+        u = (x + 0.5) / w
+        return 1, 1, 1, min(1.0, 0.4 * math.exp(-((u - 0.11) / 0.044) ** 2) + 0.15 * (1 - u) ** 3)
+
+    write_tga(path, w, h, pixel)
+
+
+def make_round_end(path, right=False, w=40, h=64):
+    """Mask that rounds off one end of the bar for Rounded Liquid: a half circle as tall as the bar, then
+    solid. The mask is 0.625 bar heights wide with the circle's centre half a bar height in, so its inner
+    columns are fully solid and stretch along the rest of the bar (the mask uses CLAMP).
+    """
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        if right:
+            u = 1 - u
+        dx = u * w / h - 0.5  # in bar heights from the circle's centre
+        if dx >= 0:
+            return 1, 1, 1, 1
+        d = math.hypot(dx, v - 0.5)
+        return 1, 1, 1, max(0.0, min(1.0, 0.5 + (0.5 - d) * h))
+
+    write_tga(path, w, h, pixel)
+
+
+def make_glass_cap_round(path, dark=False, w=32, h=64):
+    """Glass on the left end of the tube when it is rounded off (mirrored for the right): the rim, or
+    with dark the thin line just inside it, following the half circle of the RoundEnd mask.
+    """
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        d = math.hypot(u * 0.5 - 0.5, v - 0.5)  # in bar heights; the texture is half a bar height wide
+        if dark:
+            return 1, 1, 1, 0.4 * math.exp(-((d - 0.435) / 0.022) ** 2)
+        return 1, 1, 1, 0.5 * math.exp(-((d - 0.482) / 0.022) ** 2) * (1.1 - 0.6 * v)
+
+    write_tga(path, w, h, pixel)
+
+
 def make_ember(path, size=32):
     """Teardrop flame: wide and bright at the bottom, thin at the top."""
 
@@ -424,6 +613,16 @@ def main():
     make_edge(os.path.join(out, "Edge.tga"))
     make_foam(os.path.join(out, "Foam.tga"))
     make_core(os.path.join(out, "Core.tga"))
+    make_bolt(os.path.join(out, "Bolt.tga"))
+    make_shade(os.path.join(out, "Shade.tga"))
+    make_glass_light(os.path.join(out, "GlassLight.tga"))
+    make_glass_dark(os.path.join(out, "GlassDark.tga"))
+    make_glass_cap(os.path.join(out, "GlassCap.tga"))
+    make_glass_cap_dark(os.path.join(out, "GlassCapDark.tga"))
+    make_glass_cap_round(os.path.join(out, "GlassCapRound.tga"))
+    make_glass_cap_round(os.path.join(out, "GlassCapRoundDark.tga"), dark=True)
+    make_round_end(os.path.join(out, "RoundEndL.tga"))
+    make_round_end(os.path.join(out, "RoundEndR.tga"), right=True)
     make_ember(os.path.join(out, "Ember.tga"))
     make_snow(os.path.join(out, "Snow.tga"))
     make_leaf(os.path.join(out, "Leaf.tga"))

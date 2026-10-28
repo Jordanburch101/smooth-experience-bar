@@ -15,6 +15,16 @@ broken and now works. Leave out internal changes. Sections are
   you gain XP.
 - Bubbles are smaller and glassier, take on the colour of the magic, and
   drift and circle along with the swirl.
+- Lightning flickers in the clouds inside the liquid: faint flashes at
+  rest that build into a storm with big or rapid XP gains. Turn it off
+  with the new Lightning setting.
+- The magic inside the liquid mixes related colours that slowly drift
+  and trade places.
+- New Glass setting (off by default): the bar becomes a glass tube that
+  takes on the liquid's colour and lights up with its glow, XP gains,
+  lightning and level-ups.
+- New Rounded Liquid setting (off by default): rounds the bar's ends into
+  a capsule and shades the liquid so it looks round.
 
 ## 1.0.1
 

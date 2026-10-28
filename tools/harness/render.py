@@ -65,6 +65,22 @@ def lua_value(v):
         return repr(v)
 
 
+def mask_alpha(img, wrap, x0, y0, pw, ph, mx0, my0, mw, mh):
+    """Mask texture's alpha over a texture's pixels (canvas coords). CLAMP stretches the mask's edge
+    outward; anything else is transparent outside the mask, as in the client."""
+    th, tw = img.shape[:2]
+    u = ((x0 + np.arange(pw) + 0.5) - mx0) / mw
+    v = ((y0 + np.arange(ph) + 0.5) - my0) / mh
+    inside = np.ones((ph, pw), bool)
+    if wrap == "CLAMP":
+        u, v = np.clip(u, 0, 1), np.clip(v, 0, 1)
+    else:
+        inside = ((u >= 0) & (u <= 1))[None, :] & ((v >= 0) & (v <= 1))[:, None]
+    xi = np.clip((u * tw).astype(int), 0, tw - 1)
+    yi = np.clip((v * th).astype(int), 0, th - 1)
+    return (img[yi][:, xi, 3] * inside)[..., None]
+
+
 class Session:
     """One addon instance in the mock, logged in and ready to play the scenario."""
 
@@ -158,6 +174,12 @@ class Session:
         else:
             src = src * np.array([r.vc[i] for i in range(1, 5)], np.float32)
         alpha = src[..., 3:4] * r.alpha
+        masks = r.masks
+        for i in range(len(masks) if masks else 0):
+            m = masks[i + 1]
+            ml, mt, mw, mh = m.Rect(m)
+            alpha = alpha * mask_alpha(self.media(m.file), m.wrap, x0, y0, pw, ph,
+                                       ox + ml * k, oy + mt * k, mw * k, mh * k)
         cx0, cy0 = max(0, x0), max(0, y0)
         cx1, cy1 = min(canvas.shape[1], x1), min(canvas.shape[0], y1)
         if cx0 >= cx1 or cy0 >= cy1:

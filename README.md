@@ -36,8 +36,9 @@ Open the settings with `/seb`, by right-clicking the bar, or from Options > AddO
 
 - Unlock to drag the bar anywhere and resize it from the corner, or set width, height and scale exactly.
 - Toggle each line of text, or hide the default experience bar.
-- Change the fill speed, or switch the liquid waves, swirl, bubbles, sparkles, ambient particles and level-up
-  flash on and off.
+- Change the fill speed, or switch the liquid waves, swirl, bubbles, sparkles, ambient particles, lightning
+  and level-up flash on and off.
+- Turn on Glass for a glass tube that reflects the liquid, and Rounded Liquid for rounded ends.
 - Preview XP gains, quest turn-ins and level-ups without touching your real XP.
 
 ![Fire, Frost, Honey, Lava, Cosmic, Nature and Void effect themes, each with its own particles](branding/gallery/effects.png)

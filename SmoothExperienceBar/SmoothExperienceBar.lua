@@ -52,7 +52,10 @@ local DEFAULTS = {
     bubbles = true,
     sparkles = true,
     ambient = true,
+    lightning = true,
     restedGlow = false,
+    glass = false,
+    rounding = false,
     flash = true,
 }
 
@@ -124,6 +127,28 @@ local restedTex = Segment(0)
 local questTex  = Segment(1)
 local leadTex   = Segment(2)
 local liquid    = ns.Liquid.New(bar, barWidth, barHeight, theme, db)
+
+-- Rounded Liquid: shading that rounds off everything inside the bar, and masks that cut both ends into
+-- half circles so the bar is a capsule and nothing inside spills past the ends. Mask textures are a
+-- newer API; without them only the shading is used. The optional glass is drawn by the liquid, since it
+-- reflects what the liquid is doing.
+local shade = bar:CreateTexture(nil, "OVERLAY", nil, 0)
+shade:SetAllPoints()
+shade:SetTexture(MEDIA .. "Shade")
+shade:SetVertexColor(0, 0, 0)
+shade:Hide()
+
+local roundL, roundR
+if bar.CreateMaskTexture then
+    roundL = bar:CreateMaskTexture()
+    roundL:SetTexture(MEDIA .. "RoundEndL", "CLAMP", "CLAMP")
+    roundL:SetPoint("TOPLEFT")
+    roundL:SetPoint("BOTTOMLEFT")
+    roundR = bar:CreateMaskTexture()
+    roundR:SetTexture(MEDIA .. "RoundEndR", "CLAMP", "CLAMP")
+    roundR:SetPoint("TOPRIGHT")
+    roundR:SetPoint("BOTTOMRIGHT")
+end
 
 local flash = bar:CreateTexture(nil, "OVERLAY", nil, 2)
 flash:SetAllPoints()
@@ -204,6 +229,31 @@ local function Place(tex, x, w, back)
     tex:SetPoint("BOTTOMLEFT", x, 0)
     tex:SetWidth(w)
     tex:Show()
+end
+
+local rounded = false -- whether the masks are on the bar's textures
+
+local function ApplyRounding()
+    shade:SetShown(db.rounding)
+    if not roundL then return end
+    -- The masks are 0.625 bar heights wide with the half circle in their outer part (RoundEnd.tga).
+    roundL:SetWidth(barHeight * 0.625)
+    roundR:SetWidth(barHeight * 0.625)
+    local on = db.rounding and true or false
+    if on == rounded then return end
+    rounded = on
+    liquid:SetRoundEnds(on)
+    for _, r in ipairs({ bar:GetRegions() }) do
+        if r:GetObjectType() == "Texture" then
+            if on then
+                r:AddMaskTexture(roundL)
+                r:AddMaskTexture(roundR)
+            else
+                r:RemoveMaskTexture(roundL)
+                r:RemoveMaskTexture(roundR)
+            end
+        end
+    end
 end
 
 local function ApplyTheme()
@@ -648,6 +698,7 @@ local function OnBarResized(w, h)
     liquid:SetSize(w, h)
     liquid:Snap(A.fill * w)
     ApplyTextSize()
+    ApplyRounding()
     RenderBar()
 end
 
@@ -769,6 +820,9 @@ local SETTING_APPLY = {
     bubbles = function() liquid:ApplyOptions() end,
     sparkles = function() liquid:ApplyOptions() end,
     ambient = function() liquid:ApplyOptions() end,
+    lightning = function() liquid:ApplyOptions() end,
+    glass = function() liquid:ApplyOptions() end,
+    rounding = ApplyRounding,
 }
 
 function Core.OnSettingChanged(key)
@@ -857,6 +911,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         if not ns.Themes.list[db.theme] then db.theme = DEFAULTS.theme end
         liquid:SetOptions(db)
         ApplyTheme()
+        ApplyRounding()
         ApplyScale()
         ApplySize()
         ApplyPosition()

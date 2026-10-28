@@ -7,6 +7,8 @@
 --   swirl     = { texture, flow = { u, v }, alpha, pulse, pulseRate }      the veins inside
 --   clouds    = { texture, dark, light, scale }                           slow clouds behind the veins
 --   core      = { alpha, pulseRate }                                      glow through the middle (glow colour)
+--   crackle   = { rate, energyRate, alpha, glow, sheet, strokes, length, color }  lightning in the clouds
+--   swirlC    = third vein colour for the clouds; defaults to swirlA turned a little round the colour wheel
 --   bubbles   = { texture, blend, rate, energyRate, rise, size, alpha, drift }
 --   burst     = { texture, blend, mode = "throw" | "attract", buoyancy, drag, spin, twinkle }
 --   ambient   = { { area, rate, energyRate, texture, blend, size, life, vx, vy, buoyancy, drag,
@@ -218,6 +220,7 @@ Themes.Register("prismatic", {
 
 Themes.Register("arcane", {
     name = "Arcane",
+    crackle    = { rate = 0.2 },                               -- restless arcane energy
     fillA      = { 0.55, 0.10, 0.65 },
     fillB      = { 0.30, 0.85, 1.00 },
     lead       = { 0.90, 0.90, 1.00, 0.25 },
@@ -428,6 +431,7 @@ Themes.Register("zangarmarsh", {
 
 Themes.Register("netherstorm", {
     name = "Netherstorm",
+    crackle    = { rate = 0.35, energyRate = 7 },              -- a storm in a bottle
     fillA      = { 0.22, 0.04, 0.42 },
     fillB      = { 0.65, 0.35, 1.00 },
     lead       = { 0.85, 1.00, 0.95, 0.25 },
@@ -556,6 +560,7 @@ Themes.Register("frost", {
 
 Themes.Register("honey", {
     name = "Honey",
+    crackle    = { rate = 0, energyRate = 0 },
     fillA      = { 0.55, 0.30, 0.02 },
     fillB      = { 1.00, 0.75, 0.20 },
     lead       = { 1.00, 0.95, 0.75, 0.25 },
@@ -639,6 +644,7 @@ Themes.Register("cosmic", {
 
 Themes.Register("nature", {
     name = "Nature",
+    crackle    = { rate = 0, energyRate = 0 },
     fillA      = { 0.10, 0.30, 0.05 },
     fillB      = { 0.45, 0.80, 0.20 },
     lead       = { 0.90, 1.00, 0.75, 0.25 },
@@ -670,6 +676,7 @@ Themes.Register("nature", {
 
 Themes.Register("void", {
     name = "Void",
+    crackle    = { rate = 0.15 },
     fillA      = { 0.16, 0.04, 0.32 },
     fillB      = { 0.55, 0.25, 0.95 },
     bg         = { 0, 0, 0, 0.6 },

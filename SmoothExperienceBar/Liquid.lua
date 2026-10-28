@@ -15,6 +15,10 @@ local CFG = {
     step        = 1 / 120, -- fixed physics step
     energyDecay = 0.8,     -- per second
     bubbles     = 36,      -- pool sizes
+    bolts       = 4,
+    boltRows    = 8,       -- arc variants stacked in Bolt.tga
+    glassCap    = 0.5,     -- width of the glass tube's end textures, in bar heights
+    glintEvery  = { 20, 35 }, -- seconds between idle glints along the glass
     motes       = 64,
     edgeW       = 6,       -- width of the bright line texture along the front, px
     edgeCore    = 0.7,     -- where the line sits across Edge.tga (EDGE_CORE in make_media.py)
@@ -53,6 +57,21 @@ local CORE = {
     pulseRate = 0.2, -- Hz
 }
 
+-- Lightning in the clouds inside the liquid: long arcs that flash in a few quick strokes, drift with the
+-- swirl and light up the clouds around them. Some flashes are sheet lightning, a glow with no arc.
+-- At rest there are only faint sheet flashes; XP gains build up charge, and the more charge, the more
+-- often it flashes and the bigger and brighter the flashes get.
+local CRACKLE = {
+    rate       = 0.08,         -- faint flashes per second at rest
+    energyRate = 5,            -- extra per second at full charge
+    alpha      = 0.9,          -- arc brightness at the peak of a stroke
+    glow       = 0.7,          -- the bloom it lights in the clouds
+    sheet      = 0.3,          -- share of flashes that are glow only
+    strokes    = { 2, 4 },
+    length     = { 5, 10 },    -- in bar heights
+    color      = nil,          -- arc tint; defaults to swirlB. Arcs are mostly white, the bloom takes the colour
+}
+
 local BUBBLES = {
     texture = "Bubble",
     blend   = "BLEND",
@@ -89,6 +108,27 @@ local function Lerp(a, b, t)
     return a + (b - a) * t
 end
 
+-- The same colour turned dh of the way round the colour wheel (0..1), keeping saturation and brightness.
+local function HueShift(c, dh)
+    local r, g, b = c[1], c[2], c[3]
+    local hi, lo = max(r, g, b), min(r, g, b)
+    local d = hi - lo
+    if d < 0.001 then return { r, g, b } end
+    local h
+    if hi == r then h = ((g - b) / d) % 6
+    elseif hi == g then h = (b - r) / d + 2
+    else h = (r - g) / d + 4 end
+    h = (h / 6 + dh) % 1 * 6
+    local i, f = floor(h), h - floor(h)
+    local p, q, u = lo, hi - d * f, lo + d * f
+    if i == 0 then return { hi, u, p }
+    elseif i == 1 then return { q, hi, p }
+    elseif i == 2 then return { p, hi, u }
+    elseif i == 3 then return { p, q, hi }
+    elseif i == 4 then return { u, p, hi } end
+    return { hi, p, q }
+end
+
 local function Merge(defaults, over)
     local t = {}
     for k, v in pairs(defaults) do t[k] = v end
@@ -102,7 +142,7 @@ local Liquid = {}
 Liquid.__index = Liquid
 ns.Liquid = Liquid
 
--- opts holds the user toggles (waves, swirl, bubbles, sparkles, ambient, restedGlow) and is read live.
+-- opts holds the user toggles (waves, swirl, bubbles, sparkles, ambient, lightning, restedGlow) and is read live.
 function Liquid.New(parent, width, height, theme, opts)
     local self = setmetatable({}, Liquid)
     self.parent, self.width, self.height, self.opts = parent, width, height, opts
@@ -161,6 +201,39 @@ function Liquid.New(parent, width, height, theme, opts)
     self.swirlB = Layer(5, "Swirl", "ADD")
     self.cloudLight.u, self.swirlB.u = 0.5, 0.37
 
+    self.bolts = {}
+    for i = 1, CFG.bolts do
+        self.bolts[i] = { tex = Tex("ARTWORK", 5, MEDIA .. "Bolt", "ADD"), glow = Tex("ARTWORK", 5, MEDIA .. "Glow", "ADD"),
+                          rim = Tex("OVERLAY", 1, MEDIA .. "Glow", "ADD"), active = false }
+    end
+
+    -- Optional glass tube over the bar (opts.glass), lit by the liquid; see DrawGlass. Light is split at
+    -- the front so the part over the liquid can take its colour.
+    local glass = {
+        lightL = Tex("OVERLAY", 1, MEDIA .. "GlassLight", "ADD"),
+        lightR = Tex("OVERLAY", 1, MEDIA .. "GlassLight", "ADD"),
+        dark = Tex("OVERLAY", 0, MEDIA .. "GlassDark"),
+        capL = Tex("OVERLAY", 1, MEDIA .. "GlassCap", "ADD"),
+        capR = Tex("OVERLAY", 1, MEDIA .. "GlassCap", "ADD"),
+        capDarkL = Tex("OVERLAY", 0, MEDIA .. "GlassCapDark"),
+        capDarkR = Tex("OVERLAY", 0, MEDIA .. "GlassCapDark"),
+        rimTop = Tex("OVERLAY", 1, MEDIA .. "Glow", "ADD"),
+        rimBottom = Tex("OVERLAY", 1, MEDIA .. "Glow", "ADD"),
+        glint = Tex("OVERLAY", 1, MEDIA .. "Glow", "ADD"),
+    }
+    glass.dark:SetAllPoints()
+    glass.capL:SetPoint("TOPLEFT")
+    glass.capDarkL:SetPoint("TOPLEFT")
+    glass.capR:SetPoint("TOPRIGHT")
+    glass.capDarkR:SetPoint("TOPRIGHT")
+    glass.capR:SetTexCoord(1, 0, 0, 1)
+    glass.capDarkR:SetTexCoord(1, 0, 0, 1)
+    for _, t in ipairs({ glass.dark, glass.capDarkL, glass.capDarkR }) do t:SetVertexColor(0, 0, 0) end
+    self.glass, self.glassShown, self.roundEnds = glass, false, false
+    self.glassA, self.glassB = CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1)
+    self.glintNext = Rand(CFG.glintEvery[1], CFG.glintEvery[2])
+    self:LayoutGlass()
+
     self.restGlow = Tex("ARTWORK", 5, MEDIA .. "Glow", "ADD")
 
     self.glow = Tex("ARTWORK", 7, MEDIA .. "Glow", "ADD")
@@ -177,9 +250,10 @@ function Liquid.New(parent, width, height, theme, opts)
     end
 
     self.gradA, self.gradB, self.gradC = CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1)
-    self.t, self.acc, self.energy, self.fizzAcc, self.driftAcc = 0, 0, 0, 0, 0
+    self.t, self.acc, self.energy, self.fizzAcc, self.driftAcc, self.crackleAcc = 0, 0, 0, 0, 0, 0
     self.edge, self.speed, self.back = 0, 0, 0
-    self.flowX, self.flowY = 0, 0
+    self.flowX, self.flowY, self.storm, self.charge = 0, 0, 0, 0
+    self.mixColor = { 1, 1, 1 }
     self.ambientAcc = {}
     self.rested = false
     self:SetTheme(theme)
@@ -192,6 +266,12 @@ function Liquid:SetTheme(theme)
     self.swirl = Merge(SWIRL, theme.swirl)
     self.clouds = Merge(CLOUDS, theme.clouds)
     self.coreStyle = Merge(CORE, theme.core)
+    self.crackle = Merge(CRACKLE, theme.crackle)
+    -- A third vein colour a little round the wheel from the first; the light clouds drift between it and
+    -- swirlB, and the dark pockets take a deep shifted tint, so the inside mixes related colours.
+    self.veinC = theme.swirlC or HueShift(theme.swirlA, 0.18)
+    local deep = HueShift(theme.fillA, -0.12)
+    self.deep = { deep[1] * 0.3, deep[2] * 0.3, deep[3] * 0.3 }
     self.bubbleStyle = Merge(BUBBLES, theme.bubbles)
     self.burst = Merge(BURST, theme.burst)
     self.levelBurst = Merge(self.burst, { mode = "throw" })
@@ -215,7 +295,7 @@ function Liquid:SetTheme(theme)
     self:LayerTexture(self.cloudLight, self.clouds.texture)
     self:LayerColor(self.swirlA, theme.swirlA)
     self:LayerColor(self.swirlB, theme.swirlB)
-    self:LayerColor(self.cloudDark, { 0, 0, 0 })
+    self:LayerColor(self.cloudDark, self.deep)
     self:LayerColor(self.cloudLight, theme.swirlB)
     self:LayerColor(self.core, theme.glow)
     self.glow:SetVertexColor(unpack(theme.glow))
@@ -232,6 +312,12 @@ function Liquid:SetTheme(theme)
     for _, m in ipairs(self.motes) do
         m.active = false
         m.tex:Hide()
+    end
+    for _, b in ipairs(self.bolts) do
+        b.active = false
+        b.tex:Hide()
+        b.glow:Hide()
+        b.rim:Hide()
     end
 end
 
@@ -300,6 +386,26 @@ function Liquid:LayoutTips()
     end
 end
 
+-- Whether the bar's ends are cut into half circles (Rounded Liquid with mask support), so the glass
+-- follows them.
+function Liquid:SetRoundEnds(round)
+    if round == self.roundEnds then return end
+    self.roundEnds = round
+    local g = self.glass
+    local light, dark = round and "GlassCapRound" or "GlassCap", round and "GlassCapRoundDark" or "GlassCapDark"
+    g.capL:SetTexture(MEDIA .. light)
+    g.capR:SetTexture(MEDIA .. light)
+    g.capDarkL:SetTexture(MEDIA .. dark)
+    g.capDarkR:SetTexture(MEDIA .. dark)
+    g.capR:SetTexCoord(1, 0, 0, 1)
+    g.capDarkR:SetTexCoord(1, 0, 0, 1)
+end
+
+function Liquid:LayoutGlass()
+    local g, h = self.glass, self.height
+    for _, t in ipairs({ g.capL, g.capR, g.capDarkL, g.capDarkR }) do t:SetSize(h * CFG.glassCap, h) end
+end
+
 -- The segment the front is pushing into: its colour and where it ends (px), or nil for empty bar.
 function Liquid:SetContact(color, reach)
     self.reach = reach
@@ -321,6 +427,7 @@ function Liquid:SetSize(width, height)
     end
     self:LayoutTips()
     self.glow:SetSize(36, height * 1.7)
+    self:LayoutGlass()
 end
 
 function Liquid:SetOptions(opts)
@@ -339,6 +446,15 @@ function Liquid:ApplyOptions()
             b.active = false
             b.tex:Hide()
         end
+    end
+    if not opts.lightning then
+        for _, b in ipairs(self.bolts) do
+            b.active = false
+            b.tex:Hide()
+            b.glow:Hide()
+            b.rim:Hide()
+        end
+        self.storm = 0
     end
     for _, m in ipairs(self.motes) do
         if m.active and ((m.ambient and not opts.ambient) or (not m.ambient and not opts.sparkles)) then
@@ -376,6 +492,8 @@ end
 -- XP gained. intensity 0..1, fromX..toX is where the new XP will land.
 function Liquid:Splash(intensity, fromX, toX)
     self.energy = min(1.5, self.energy + 0.08 + intensity * 0.9)
+    -- Lightning charge: one small gain barely registers, a run of them or a big one builds a storm.
+    self.charge = min(2, self.charge + 0.1 + intensity * 1.2)
 
     -- Ripple out from a random point on the front.
     if self.opts.waves then
@@ -420,6 +538,8 @@ end
 
 function Liquid:LevelUp()
     self.energy = 1.5
+    self.charge = max(self.charge, 1.5)
+    self.glintT, self.glintPower = 0, 0.8
     if self.opts.waves then
         for i = 1, CFG.rows do
             self.vel[i] = self.vel[i] + Rand(120, 220)
@@ -530,6 +650,100 @@ function Liquid:EmitBubble(x, drifter)
             return
         end
     end
+end
+
+-- Picks one of Bolt.tga's arcs, flipped at random, so a living arc can change shape.
+local function RollBolt(b)
+    local k, n = random(0, CFG.boltRows - 1), CFG.boltRows
+    local u0, u1 = 0, 1
+    local v0, v1 = k / n, (k + 1) / n
+    if random() < 0.5 then u0, u1 = 1, 0 end
+    if random() < 0.5 then v0, v1 = v1, v0 end
+    b.tex:SetTexCoord(u0, u1, v0, v1)
+end
+
+-- A flash somewhere inside the liquid, clear of the front. Arcs keep Bolt.tga's proportions, so they
+-- run several bar heights long rather than being squeezed. With little charge it is a faint glow only;
+-- with more it gets longer, brighter and fires more strokes.
+function Liquid:EmitBolt()
+    if not self.opts.lightning then return end
+    local cr, back, h = self.crackle, self.back, self.height
+    local p = min(1, self.charge / 1.2)
+    local l1, l2 = cr.length[1], cr.length[2]
+    local w = min(Rand(l1, l1 + (l2 - l1) * max(0.3, p)) * h, back - 12)
+    if w < h * 2 then return end
+    for _, b in ipairs(self.bolts) do
+        if not b.active then
+            b.x, b.w = Rand(4, back - 8 - w), w
+            local s1, s2 = cr.strokes[1], cr.strokes[2]
+            b.strokes = p < 0.25 and random(1, 2) or random(s1, floor(Lerp(s1, s2, p) + 0.5))
+            b.next, b.flash = 0, 0
+            b.power = 0.35 + 0.65 * p
+            b.sheet = p < 0.25 or random() < cr.sheet
+            -- The arc is nearly white with a hint of colour; the bloom carries the cloud's colour.
+            local c = cr.color or self.accent or self.theme.swirlB
+            local g = self.veinC
+            b.tex:SetVertexColor(Lerp(c[1], 1, 0.6), Lerp(c[2], 1, 0.6), Lerp(c[3], 1, 0.6))
+            b.glow:SetVertexColor(Lerp(g[1], 1, 0.35), Lerp(g[2], 1, 0.35), Lerp(g[3], 1, 0.35))
+            b.rim:SetVertexColor(Lerp(g[1], 1, 0.5), Lerp(g[2], 1, 0.5), Lerp(g[3], 1, 0.5))
+            b.active = true
+            if not b.sheet then b.tex:Show() end
+            b.glow:Show()
+            return
+        end
+    end
+end
+
+-- Each stroke flashes bright and dies away fast, with a new arc shape and the bloom somewhere new along
+-- it. Arcs ride the swirl. self.storm is how much lightning is lit, which brightens the clouds and core.
+function Liquid:UpdateBolts(dt)
+    local cr, back, h, parent = self.crackle, self.back, self.height, self.parent
+    local storm = 0
+    for _, b in ipairs(self.bolts) do
+        if b.active then
+            b.next = b.next - dt
+            if b.next <= 0 and b.strokes > 0 then
+                b.strokes = b.strokes - 1
+                b.flash = Rand(0.7, 1)
+                b.at = Rand(0.25, 0.75)
+                b.next = Rand(0.07, 0.22)
+                RollBolt(b)
+            end
+            b.flash = b.flash * exp(-dt / 0.07)
+            b.x = b.x + self.flowX * dt
+            -- Keep clear of the front: slide back first, and only shorten if there is no room.
+            local over = b.x + b.w - (back - 2)
+            if over > 0 then b.x = max(2, b.x - over) end
+            local w = min(b.w, back - 2 - b.x)
+            if (b.strokes == 0 and b.flash < 0.03) or w < h * 2 or not self.opts.lightning then
+                b.active = false
+                b.tex:Hide()
+                b.glow:Hide()
+                b.rim:Hide()
+            else
+                local lit = b.flash * b.power
+                b.tex:SetSize(w, h * 0.9)
+                b.tex:SetPoint("TOPLEFT", parent, "TOPLEFT", b.x, -h * 0.05)
+                b.tex:SetAlpha(min(1, cr.alpha * lit))
+                local gw = w * (b.sheet and 0.8 or 0.6)
+                local gx = max(b.x + gw / 2, min(b.x + w - gw / 2, b.x + w * b.at))
+                b.glow:SetSize(gw, h)
+                b.glow:SetPoint("CENTER", parent, "LEFT", gx, 0)
+                b.glow:SetAlpha(min(1, cr.glow * lit * (b.sheet and 1.3 or 1)))
+                -- The flash shows on the glass too: a gleam along the top rim above it.
+                if self.opts.glass then
+                    b.rim:SetSize(gw * 0.9, h * 0.4)
+                    b.rim:SetPoint("CENTER", parent, "TOPLEFT", gx, -h * 0.1)
+                    b.rim:SetAlpha(min(1, cr.glow * lit * 0.8))
+                    b.rim:Show()
+                else
+                    b.rim:Hide()
+                end
+                storm = storm + lit
+            end
+        end
+    end
+    self.storm = min(1, storm)
 end
 
 function Liquid:UpdateParticles(dt)
@@ -683,6 +897,14 @@ function Liquid:Update(dt, edge)
         if edge > 24 then self:EmitBubble(Rand(4, edge - 14), true) end
     end
 
+    local cr = self.crackle
+    self.charge = self.charge * exp(-0.5 * dt)
+    self.crackleAcc = self.crackleAcc + dt * (cr.rate + cr.energyRate * max(0, self.charge - 0.3) ^ 1.3)
+    while self.crackleAcc >= 1 do
+        self.crackleAcc = self.crackleAcc - 1
+        self:EmitBolt()
+    end
+
     if self.ambient and self.opts.ambient then
         for i, em in ipairs(self.ambient) do
             local acc = (self.ambientAcc[i] or 0) + dt * (em.rate + (em.energyRate or 0) * self.energy)
@@ -695,6 +917,7 @@ function Liquid:Update(dt, edge)
     end
 
     self:Draw(dt)
+    self:UpdateBolts(dt)
     self:UpdateParticles(dt)
 end
 
@@ -800,10 +1023,20 @@ function Liquid:Draw(dt)
         -- How fast the veins move on screen, px/s with y up, so bubbles can ride along with them.
         self.flowX, self.flowY = flow * fu * SWIRL_W, -flow * fv * SWIRL_H
 
+        -- The light clouds and the second veins trade between swirlB and the third colour, out of step.
+        local mix, vb, vcol, mc = 0.5 + 0.5 * sin(t * 2 * pi / 9), self.theme.swirlB, self.veinC, self.mixColor
+        mc[1], mc[2], mc[3] = Lerp(vb[1], vcol[1], mix), Lerp(vb[2], vcol[2], mix), Lerp(vb[3], vcol[3], mix)
+        self:LayerColor(cloudLight, mc)
+        mix = 1 - mix
+        mc[1], mc[2], mc[3] = Lerp(vb[1], vcol[1], mix), Lerp(vb[2], vcol[2], mix), Lerp(vb[3], vcol[3], mix)
+        self:LayerColor(swirlB, mc)
+
         local cs = cl.scale
         self:DrawLayer(cloudDark, cs / SWIRL_W, cs / SWIRL_H, cl.dark)
-        self:DrawLayer(cloudLight, cs * 1.4 / SWIRL_W, cs * 1.4 / SWIRL_H, cl.light * (1 + energy))
-        local glow = 0.2 + 0.07 * sin(t * co.pulseRate * 2 * pi) + 0.3 * min(1, energy)
+        -- Lightning lights the clouds from inside.
+        local storm = self.storm
+        self:DrawLayer(cloudLight, cs * 1.4 / SWIRL_W, cs * 1.4 / SWIRL_H, min(1, cl.light * (1 + energy + storm * 1.2)))
+        local glow = 0.2 + 0.07 * sin(t * co.pulseRate * 2 * pi) + 0.3 * min(1, energy) + 0.15 * storm
         self:DrawLayer(core, 0.5 / SWIRL_W, 1 / h, min(1, glow * co.alpha))
 
         local pulse = sw.pulse * (0.5 + 0.5 * sin(t * sw.pulseRate * 2 * pi))
@@ -834,5 +1067,111 @@ function Liquid:Draw(dt)
         self.glow:Show()
     else
         self.glow:Hide()
+    end
+
+    self:DrawGlass(dt, fa, fb)
+end
+
+-- The optional glass tube, lit by what is inside: over the liquid it takes the liquid's colours, the
+-- glowing front lights the rims beside it, and it brightens with the core's pulse, XP gains and
+-- lightning. A glint runs along it on level-up and now and then at rest.
+function Liquid:DrawGlass(dt, fa, fb)
+    local g = self.glass
+    if not self.opts.glass then
+        if self.glassShown then
+            for _, t in pairs(g) do t:Hide() end
+            self.glassShown, self.glintT = false, nil
+        end
+        return
+    end
+    self.glassShown = true
+    local parent, w, h, edge, energy, storm = self.parent, self.width, self.height, self.edge, self.energy, self.storm
+    local pulse = sin(self.t * self.coreStyle.pulseRate * 2 * pi)
+    local lit = min(1, 0.7 * (1 + 0.12 * pulse + 0.35 * min(1, energy) + 0.6 * storm))
+
+    local capW = h * CFG.glassCap
+    if edge >= 1 then
+        self.glassA:SetRGBA(Lerp(fa[1], 1, 0.5), Lerp(fa[2], 1, 0.5), Lerp(fa[3], 1, 0.5), 1)
+        self.glassB:SetRGBA(Lerp(fb[1], 1, 0.5), Lerp(fb[2], 1, 0.5), Lerp(fb[3], 1, 0.5), 1)
+        g.lightL:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+        g.lightL:SetSize(min(edge, w), h)
+        g.lightL:SetTexCoord(0, min(1, edge / w), 0, 1)
+        g.lightL:SetGradient("HORIZONTAL", self.glassA, self.glassB)
+        g.lightL:SetAlpha(lit)
+        g.lightL:Show()
+    else
+        g.lightL:Hide()
+    end
+    if edge <= w - 1 then
+        g.lightR:SetPoint("TOPLEFT", parent, "TOPLEFT", max(0, edge), 0)
+        g.lightR:SetSize(w - max(0, edge), h)
+        g.lightR:SetTexCoord(max(0, edge) / w, 1, 0, 1)
+        g.lightR:SetVertexColor(0.78, 0.86, 1) -- over the empty part: a cool, neutral reflection
+        g.lightR:SetAlpha(min(1, 0.6 + 0.3 * storm))
+        g.lightR:Show()
+    else
+        g.lightR:Hide()
+    end
+    g.dark:Show()
+
+    -- Ends pick up the liquid's colour once it fills them.
+    if edge > capW then
+        g.capL:SetVertexColor(Lerp(fa[1], 1, 0.5), Lerp(fa[2], 1, 0.5), Lerp(fa[3], 1, 0.5))
+    else
+        g.capL:SetVertexColor(0.78, 0.86, 1)
+    end
+    if edge >= w - capW then
+        g.capR:SetVertexColor(Lerp(fb[1], 1, 0.5), Lerp(fb[2], 1, 0.5), Lerp(fb[3], 1, 0.5))
+    else
+        g.capR:SetVertexColor(0.78, 0.86, 1)
+    end
+    g.capL:SetAlpha(lit)
+    g.capR:SetAlpha(lit)
+    g.capL:Show()
+    g.capR:Show()
+    g.capDarkL:Show()
+    g.capDarkR:Show()
+
+    -- The glowing front lights the rims beside it.
+    if edge > 2 and edge < w - 2 then
+        local c = self.accent or self.theme.glow
+        local a = (0.2 + 0.45 * min(1, energy) + 0.3 * storm) * (0.9 + 0.1 * pulse)
+        for _, rim in ipairs({ g.rimTop, g.rimBottom }) do
+            rim:SetVertexColor(c[1], c[2], c[3])
+            rim:SetSize(h * 2, h * 0.45)
+        end
+        g.rimTop:SetPoint("CENTER", parent, "TOPLEFT", edge, -h * 0.08)
+        g.rimTop:SetAlpha(min(1, a))
+        g.rimTop:Show()
+        g.rimBottom:SetPoint("CENTER", parent, "TOPLEFT", edge, -h * 0.92)
+        g.rimBottom:SetAlpha(min(1, a * 0.6))
+        g.rimBottom:Show()
+    else
+        g.rimTop:Hide()
+        g.rimBottom:Hide()
+    end
+
+    -- A glint sliding along the highlight.
+    if not self.glintT then
+        self.glintNext = self.glintNext - dt
+        if self.glintNext <= 0 then
+            self.glintT, self.glintPower = 0, 0.3
+            self.glintNext = Rand(CFG.glintEvery[1], CFG.glintEvery[2])
+        end
+    end
+    if self.glintT then
+        self.glintT = self.glintT + dt
+        local p = self.glintT / 0.9
+        if p >= 1 then
+            self.glintT = nil
+            g.glint:Hide()
+        else
+            local x = -h + (w + 2 * h) * p * p * (3 - 2 * p)
+            g.glint:SetSize(h * 3, h * 0.35)
+            g.glint:SetPoint("CENTER", parent, "TOPLEFT", x, -h * 0.2)
+            g.glint:SetVertexColor(0.9, 0.95, 1)
+            g.glint:SetAlpha(self.glintPower * sin(pi * p))
+            g.glint:Show()
+        end
     end
 end
