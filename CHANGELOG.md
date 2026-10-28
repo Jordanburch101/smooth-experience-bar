@@ -6,6 +6,18 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.2.0
+
+### New
+- The front of the liquid leans forward while it pours fast, then rocks
+  back and settles.
+- Fel, Frost, Plague and Void give off wisps of vapour from the front of
+  the liquid.
+
+### Fixed
+- Pale themes such as the default and Holy no longer wash out to white
+  during big XP gains, so the lightning stays visible.
+
 ## 1.1.0
 
 ### New

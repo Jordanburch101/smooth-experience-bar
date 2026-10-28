@@ -2,7 +2,7 @@
 -- default theme. Colours are { r, g, b [, a] } in 0..1, text colours are "RRGGBB" hex.
 --
 -- Besides colours a theme can set (see Liquid.lua for the defaults):
---   physics   = { amplitude, stiffness, damping, coupling, slosh, ambient }  how the liquid moves
+--   physics   = { amplitude, stiffness, damping, coupling, slosh, ambient, crest }  how the liquid moves
 --   fillSpeed = multiplier on how fast the liquid flows to a new level
 --   swirl     = { texture, flow = { u, v }, alpha, pulse, pulseRate }      the veins inside
 --   clouds    = { texture, dark, light, scale }                           slow clouds behind the veins
@@ -255,6 +255,12 @@ Themes.Register("fel", {
     absorbTo   = { 0.50, 1.00, 0.30 },
     levelFrom  = { 0.95, 1.00, 0.85 },
     levelTo    = { 0.40, 1.00, 0.20 },
+    ambient    = {
+        -- Fel smoke rising off the front.
+        { area = "vapour", rate = 2.4, energyRate = 3, texture = "Wisp", blend = "BLEND", size = { 14, 24 },
+          life = { 1.8, 2.8 }, vx = { -3, 3 }, vy = { 6, 12 }, buoyancy = 3, drag = 0.6, spin = { -0.4, 0.4 },
+          grow = true, alpha = 0.59, from = { 0.60, 1.00, 0.40 }, to = { 0.25, 0.55, 0.15 } },
+    },
 })
 
 Themes.Register("holy", {
@@ -356,6 +362,12 @@ Themes.Register("plague", {
     levelTo    = { 0.55, 0.75, 0.10 },
     swirl      = { texture = "Nebula", alpha = 1.3 },
     bubbles    = { rate = 1.2 },
+    ambient    = {
+        -- Toxic fumes rising off the front.
+        { area = "vapour", rate = 3, energyRate = 3, texture = "Wisp", blend = "BLEND", size = { 14, 24 },
+          life = { 1.8, 2.8 }, vx = { -3, 3 }, vy = { 6, 12 }, buoyancy = 3, drag = 0.6, spin = { -0.4, 0.4 },
+          grow = true, alpha = 0.68, from = { 0.80, 0.90, 0.40 }, to = { 0.45, 0.50, 0.15 } },
+    },
 })
 
 Themes.Register("midnight", {
@@ -555,6 +567,10 @@ Themes.Register("frost", {
         { area = "above", rate = 1.2, texture = "Snow", size = { 7, 12 }, life = { 2.5, 4 },
           vx = { 3, 10 }, vy = { -14, -8 }, buoyancy = 0, drag = 0.2, spin = { -1.5, 1.5 }, alpha = 0.8,
           from = { 1.00, 1.00, 1.00 }, to = { 0.70, 0.90, 1.00 } },
+        -- Cold mist rising off the front.
+        { area = "vapour", rate = 2, energyRate = 3, texture = "Wisp", blend = "BLEND", size = { 14, 24 },
+          life = { 1.8, 2.8 }, vx = { -3, 3 }, vy = { 6, 12 }, buoyancy = 3, drag = 0.6, spin = { -0.4, 0.4 },
+          grow = true, alpha = 0.51, from = { 0.95, 1.00, 1.00 }, to = { 0.70, 0.85, 1.00 } },
     },
 })
 
@@ -700,5 +716,9 @@ Themes.Register("void", {
         { area = "above", mode = "attract", rate = 1.5, energyRate = 6, texture = "Glow", size = { 9, 15 },
           life = { 1.5, 2.5 }, vx = { -10, 10 }, vy = { -5, 5 }, drag = 1.2,
           from = { 0.60, 0.30, 1.00 }, to = { 0.20, 0.05, 0.50 } },
+        -- Dark vapour rising off the front.
+        { area = "vapour", rate = 2, energyRate = 3, texture = "Wisp", blend = "BLEND", size = { 14, 24 },
+          life = { 1.8, 2.8 }, vx = { -3, 3 }, vy = { 6, 12 }, buoyancy = 3, drag = 0.6, spin = { -0.4, 0.4 },
+          grow = true, alpha = 0.59, from = { 0.45, 0.25, 0.75 }, to = { 0.12, 0.04, 0.25 } },
     },
 })

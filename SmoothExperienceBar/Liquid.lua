@@ -33,6 +33,7 @@ local PHYSICS = {
     coupling  = 900,  -- how strongly neighbouring slices pull on each other (wave speed)
     slosh     = 0.18, -- front displacement per px/s change in fill speed
     ambient   = 1.0,  -- idle wobble, px
+    crest     = 7,    -- how far the top of the front leans ahead of the bottom while pouring fast, px
 }
 
 local SWIRL = {
@@ -171,6 +172,10 @@ function Liquid.New(parent, width, height, theme, opts)
     self.body:SetPoint("BOTTOMLEFT")
 
     self.rows, self.tips, self.foam, self.pos, self.vel = {}, {}, {}, {}, {}
+    self.lean, self.leanShape = 0, {}
+    for i = 1, CFG.rows do
+        self.leanShape[i] = 0.55 - ((i - 1) / (CFG.rows - 1)) ^ 1.3 -- row 1 is the top
+    end
     for i = 1, CFG.rows do
         local row = Tex("ARTWORK", 3)
         row:SetHeight(self.rowH)
@@ -272,6 +277,11 @@ function Liquid:SetTheme(theme)
     self.veinC = theme.swirlC or HueShift(theme.swirlA, 0.18)
     local deep = HueShift(theme.fillA, -0.12)
     self.deep = { deep[1] * 0.3, deep[2] * 0.3, deep[3] * 0.3 }
+    -- Room for extra light before the liquid washes out to white. A colour that is already bright in
+    -- two channels (pale violet, gold) saturates fast, so XP gains and lightning add less to it.
+    local fb = theme.fillB
+    local mid = fb[1] + fb[2] + fb[3] - max(fb[1], fb[2], fb[3]) - min(fb[1], fb[2], fb[3])
+    self.headroom = 1 - 1.2 * max(0, mid - 0.3)
     self.bubbleStyle = Merge(BUBBLES, theme.bubbles)
     self.burst = Merge(BURST, theme.burst)
     self.levelBurst = Merge(self.burst, { mode = "throw" })
@@ -603,6 +613,7 @@ end
 
 -- Continuous particles from a theme's `ambient` list (embers, snow, spores, stars...).
 -- area: "liquid" anywhere in the liquid, "surface" along its top, "front" at the liquid front,
+-- "vapour" off the top of the liquid just behind the front,
 -- "above" over the bar so they can drift down onto it.
 function Liquid:EmitAmbient(em, edge)
     local w, h = self.width, self.height
@@ -613,6 +624,9 @@ function Liquid:EmitAmbient(em, edge)
     elseif em.area == "surface" then
         if edge < 8 then return end
         x, y = Rand(2, edge - 2), Rand(h - 5, h)
+    elseif em.area == "vapour" then
+        if edge < 16 or edge > w - 2 then return end
+        x, y = Rand(edge - 14, edge - 2), Rand(h - 4, h)
     elseif em.area == "above" then
         x, y = Rand(0, min(w, edge + 40)), Rand(h + 4, h + 14)
     else
@@ -844,16 +858,20 @@ end
 
 function Liquid:Simulate(dt)
     local pos, vel, n, phys = self.pos, self.vel, CFG.rows, self.phys
+    local lean, shape = self.lean, self.leanShape
     local k, d, c, limit = phys.stiffness, phys.damping, phys.coupling, phys.amplitude * 1.2
     local s = CFG.step
 
     self.acc = min(self.acc + dt, s * 8)
     while self.acc >= s do
         self.acc = self.acc - s
+        -- Springs and neighbour coupling act on the offset from the lean, so the front holds the lean's
+        -- shape and ripples run over it as usual.
         for i = 1, n do
-            local p = pos[i]
-            local lap = (pos[i - 1] or p) + (pos[i + 1] or p) - 2 * p
-            vel[i] = vel[i] + (-k * p - d * vel[i] + c * lap) * s
+            local q = pos[i] - lean * shape[i]
+            local qa = pos[i - 1] and pos[i - 1] - lean * shape[i - 1] or q
+            local qb = pos[i + 1] and pos[i + 1] - lean * shape[i + 1] or q
+            vel[i] = vel[i] + (-k * q - d * vel[i] + c * (qa + qb - 2 * q)) * s
         end
         for i = 1, n do
             local p = pos[i] + vel[i] * s
@@ -881,6 +899,10 @@ function Liquid:Update(dt, edge)
             self.vel[i] = self.vel[i] + kick * sin(pi * (i - 0.5) / n)
         end
     end
+    -- Pouring fast, the front leans: the top runs ahead and the bottom drags. The lean moves where the
+    -- springs pull the front, so when the pour slows it rocks back and settles by itself.
+    local leanTo = self.opts.waves and self.phys.crest * min(1, max(0, speed) / 250) or 0
+    self.lean = self.lean + (leanTo - self.lean) * (1 - exp(-14 * dt))
 
     self:Simulate(dt)
     self.energy = self.energy * exp(-CFG.energyDecay * dt)
@@ -1034,15 +1056,15 @@ function Liquid:Draw(dt)
         local cs = cl.scale
         self:DrawLayer(cloudDark, cs / SWIRL_W, cs / SWIRL_H, cl.dark)
         -- Lightning lights the clouds from inside.
-        local storm = self.storm
-        self:DrawLayer(cloudLight, cs * 1.4 / SWIRL_W, cs * 1.4 / SWIRL_H, min(1, cl.light * (1 + energy + storm * 1.2)))
-        local glow = 0.2 + 0.07 * sin(t * co.pulseRate * 2 * pi) + 0.3 * min(1, energy) + 0.15 * storm
+        local storm, room = self.storm * self.headroom, self.headroom
+        self:DrawLayer(cloudLight, cs * 1.4 / SWIRL_W, cs * 1.4 / SWIRL_H, min(1, cl.light * (1 + energy * room + storm * 1.2)))
+        local glow = 0.2 + 0.07 * sin(t * co.pulseRate * 2 * pi) + 0.3 * min(1, energy) * room + 0.15 * storm
         self:DrawLayer(core, 0.5 / SWIRL_W, 1 / h, min(1, glow * co.alpha))
 
         local pulse = sw.pulse * (0.5 + 0.5 * sin(t * sw.pulseRate * 2 * pi))
-        self:DrawLayer(swirlA, 1 / SWIRL_W, 1 / SWIRL_H, min(1, (0.12 + 0.3 * energy + pulse) * sw.alpha))
+        self:DrawLayer(swirlA, 1 / SWIRL_W, 1 / SWIRL_H, min(1, (0.12 + 0.3 * energy * room + pulse) * sw.alpha))
         self:DrawLayer(swirlB, 0.7 / SWIRL_W, 0.7 / SWIRL_H,
-            min(1, (0.08 + 0.22 * energy + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha))
+            min(1, (0.08 + 0.22 * energy * room + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha))
     else
         self.flowX, self.flowY = 0, 0
         HideLayer(cloudDark)

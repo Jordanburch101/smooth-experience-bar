@@ -483,6 +483,18 @@ def make_glass_cap_round(path, dark=False, w=32, h=64):
     write_tga(path, w, h, pixel)
 
 
+def make_wisp(path, size=48):
+    """A soft, uneven puff of vapour, taller than wide, for wisps rising off the liquid."""
+    lumps = [(TileNoise(4 * 2**i, 4 * 2**i, 200 + i), 0.5**i) for i in range(3)]
+
+    def fn(dx, dy, d):
+        e = math.hypot(dx * 1.3, dy * 0.9)
+        body = max(0.0, 1 - e) ** 1.6
+        return 1, 1, 1, body * (0.35 + 0.65 * fbm(lumps, (dx + 1) / 2, (dy + 1) / 2))
+
+    write_tga(path, size, size, radial(size, fn))
+
+
 def make_ember(path, size=32):
     """Teardrop flame: wide and bright at the bottom, thin at the top."""
 
@@ -614,6 +626,7 @@ def main():
     make_foam(os.path.join(out, "Foam.tga"))
     make_core(os.path.join(out, "Core.tga"))
     make_bolt(os.path.join(out, "Bolt.tga"))
+    make_wisp(os.path.join(out, "Wisp.tga"))
     make_shade(os.path.join(out, "Shade.tga"))
     make_glass_light(os.path.join(out, "GlassLight.tga"))
     make_glass_dark(os.path.join(out, "GlassDark.tga"))
