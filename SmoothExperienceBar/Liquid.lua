@@ -18,6 +18,7 @@ local CFG = {
     motes       = 64,
     edgeW       = 6,       -- width of the bright line texture along the front, px
     edgeCore    = 0.7,     -- where the line sits across Edge.tga (EDGE_CORE in make_media.py)
+    foamW       = 12,      -- froth ahead of the front where it meets quest or rested XP, px
 }
 
 -- Defaults for the theme tables of the same name. A theme only lists what it changes.
@@ -114,13 +115,14 @@ function Liquid.New(parent, width, height, theme, opts)
     self.body:SetPoint("TOPLEFT")
     self.body:SetPoint("BOTTOMLEFT")
 
-    self.rows, self.tips, self.pos, self.vel = {}, {}, {}, {}
+    self.rows, self.tips, self.foam, self.pos, self.vel = {}, {}, {}, {}, {}
     for i = 1, CFG.rows do
         local row = Tex("ARTWORK", 3)
         row:SetHeight(self.rowH)
         self.rows[i] = row
 
         self.tips[i] = Tex("ARTWORK", 6, MEDIA .. "Edge", "ADD")
+        self.foam[i] = Tex("ARTWORK", 5, MEDIA .. "Foam", "ADD")
         self.pos[i], self.vel[i] = 0, 0
     end
     self:LayoutTips()
@@ -132,6 +134,13 @@ function Liquid.New(parent, width, height, theme, opts)
     self.swirlB = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
     self.swirlB:SetPoint("TOPLEFT")
     self.swirlB:SetPoint("BOTTOMLEFT")
+
+    -- The swirl stops at the rearmost point of the front; these carry it on to each slice's end.
+    self.capA, self.capB, self.ends = {}, {}, {}
+    for i = 1, CFG.rows do
+        self.capA[i] = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
+        self.capB[i] = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
+    end
 
     self.restGlow = Tex("ARTWORK", 4, MEDIA .. "Glow", "ADD")
 
@@ -174,6 +183,7 @@ function Liquid:SetTheme(theme)
     end
     self.ambientAcc = {}
     self.accent = nil
+    self.contact = nil -- recoloured on the next SetContact
 
     for _, tip in ipairs(self.tips) do
         tip:SetVertexColor(unpack(theme.tip))
@@ -183,6 +193,12 @@ function Liquid:SetTheme(theme)
     self.swirlB:SetTexture(swirlFile, "REPEAT", "REPEAT")
     self.swirlA:SetVertexColor(unpack(theme.swirlA))
     self.swirlB:SetVertexColor(unpack(theme.swirlB))
+    for i = 1, CFG.rows do
+        self.capA[i]:SetTexture(swirlFile, "REPEAT", "REPEAT")
+        self.capB[i]:SetTexture(swirlFile, "REPEAT", "REPEAT")
+        self.capA[i]:SetVertexColor(unpack(theme.swirlA))
+        self.capB[i]:SetVertexColor(unpack(theme.swirlB))
+    end
     self.glow:SetVertexColor(unpack(theme.glow))
     self.restGlow:SetVertexColor(theme.rested[1], theme.rested[2], theme.rested[3])
 
@@ -199,8 +215,8 @@ function Liquid:SetTheme(theme)
     end
 end
 
--- Each slice's line is 1.5 slices tall so it overlaps its neighbours on Edge.tga's ramps.
--- The first and last drop their outer ramp so the line stays inside the bar.
+-- Each slice's line and froth are 1.5 slices tall so they overlap their neighbours on the
+-- textures' ramps. The first and last drop their outer ramp so they stay inside the bar.
 function Liquid:LayoutTips()
     local rowH, n = self.rowH, CFG.rows
     for i, tip in ipairs(self.tips) do
@@ -213,6 +229,21 @@ function Liquid:LayoutTips()
         tip:SetSize(CFG.edgeW, h)
         tip:SetTexCoord(0, 1, v0, v1)
         tip.dy = top
+        self.foam[i]:SetHeight(h)
+        self.foam[i]:SetTexCoord(0, 1, v0, v1)
+    end
+end
+
+-- The segment the front is pushing into: its colour and where it ends (px), or nil for empty bar.
+function Liquid:SetContact(color, reach)
+    self.reach = reach
+    if color == self.contact then return end
+    self.contact = color
+    if color then
+        local r, g, b = color[1], color[2], color[3]
+        for _, f in ipairs(self.foam) do
+            f:SetVertexColor(Lerp(r, 1, 0.6), Lerp(g, 1, 0.6), Lerp(b, 1, 0.6))
+        end
     end
 end
 
@@ -585,8 +616,11 @@ end
 function Liquid:Draw(dt)
     local parent, w, h, amp = self.parent, self.width, self.height, self.phys.amplitude
     local edge, energy, t = self.edge, self.energy, self.t
-    local base = max(0, edge - amp)
     local opts, theme = self.opts, self.theme
+    local wobble = opts.waves and self.phys.ambient * (0.6 + energy) or 0
+    -- The body stops behind the deepest dent Simulate and the wobble allow, so no slice of the
+    -- front ever falls behind it and flattens into the body's straight end.
+    local base = max(0, edge - amp * 1.2 - wobble * 1.5 - 0.5)
 
     local fa, fb = theme.fillA, theme.fillB
     if theme.Colors then
@@ -597,6 +631,7 @@ function Liquid:Draw(dt)
         if accent then
             self.glow:SetVertexColor(accent[1], accent[2], accent[3])
             self.swirlA:SetVertexColor(accent[1], accent[2], accent[3])
+            for _, cap in ipairs(self.capA) do cap:SetVertexColor(accent[1], accent[2], accent[3]) end
         end
     end
 
@@ -614,18 +649,27 @@ function Liquid:Draw(dt)
         self.body:Hide()
     end
 
-    local wobble = opts.waves and self.phys.ambient * (0.6 + energy) or 0
     local tipAlpha = 0.25 + 0.5 * min(1, energy)
-    local rowH, back = self.rowH, edge
+    local rowH, back, ends = self.rowH, edge, self.ends
+    -- Froth where the front meets quest or rested XP: faint at rest, brighter and pushed further
+    -- ahead while the liquid pours into it.
+    local contact, reach = self.contact, self.reach or 0
+    local stir = min(1, max(0, self.speed) / 150 + energy * 0.5)
+    local foamA, foamW = 0.2 + 0.8 * stir, CFG.foamW * (1 + stir)
     for i = 1, CFG.rows do
-        local row, tip = self.rows[i], self.tips[i]
+        local row, tip, foam = self.rows[i], self.tips[i], self.foam[i]
         local off = self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))
         local right = min(w, edge + off)
-        if right < back then back = right end
         local rw = right - base
+        local fw = min(foamW, reach - right)
+        -- Where the liquid visibly ends in this slice: a slice dented past the body shows the body's end.
+        local vis = edge >= 0.5 and (rw >= 0.5 and right or base >= 0.5 and base) or nil
+        ends[i] = vis
+        if vis and vis < back then back = vis end
         if edge < 0.5 or rw < 0.5 then
             row:Hide()
             tip:Hide()
+            foam:Hide()
         else
             local y = -(i - 1) * rowH
             row:SetGradient("HORIZONTAL", self.gradB, self.gradC)
@@ -639,6 +683,14 @@ function Liquid:Draw(dt)
             else
                 tip:Hide()
             end
+            if contact and fw >= 1 then
+                foam:SetWidth(fw)
+                foam:SetPoint("TOPLEFT", parent, "TOPLEFT", right - 0.5, y + tip.dy)
+                foam:SetAlpha(foamA * (0.8 + 0.2 * sin(t * 9 + i * 1.7)))
+                foam:Show()
+            else
+                foam:Hide()
+            end
         end
     end
 
@@ -647,6 +699,7 @@ function Liquid:Draw(dt)
     -- Magic veins drift with the theme's flow; faster and brighter with energy and fill speed.
     local sw = self.swirl
     local swirlW = self.back
+    local capA, capB = self.capA, self.capB
     if swirlW >= 1 and opts.swirl then
         local flow = 0.015 + 0.12 * energy + max(0, self.speed) / 2000
         local fu, fv = sw.flow[1], sw.flow[2]
@@ -654,19 +707,49 @@ function Liquid:Draw(dt)
         self.vA = (self.vA - flow * fv * dt) % 1
         self.uB = (self.uB - flow * fu * 0.6 * dt) % 1
         self.vB = (self.vB + (0.03 - flow * fv * 0.6) * dt) % 1
+        local uA, vA, uB, vB = self.uA, self.vA, self.uB, self.vB
         local spanU, spanV = swirlW / SWIRL_W, h / SWIRL_H
-        self.swirlA:SetTexCoord(self.uA, self.uA + spanU, self.vA, self.vA + spanV)
-        self.swirlB:SetTexCoord(self.uB, self.uB + spanU * 0.7, self.vB, self.vB + spanV * 0.7)
+        self.swirlA:SetTexCoord(uA, uA + spanU, vA, vA + spanV)
+        self.swirlB:SetTexCoord(uB, uB + spanU * 0.7, vB, vB + spanV * 0.7)
         self.swirlA:SetWidth(swirlW)
         self.swirlB:SetWidth(swirlW)
         local pulse = sw.pulse * (0.5 + 0.5 * sin(t * sw.pulseRate * 2 * pi))
-        self.swirlA:SetAlpha(min(1, (0.12 + 0.3 * energy + pulse) * sw.alpha))
-        self.swirlB:SetAlpha(min(1, (0.08 + 0.22 * energy + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha))
+        local alphaA = min(1, (0.12 + 0.3 * energy + pulse) * sw.alpha)
+        local alphaB = min(1, (0.08 + 0.22 * energy + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha)
+        self.swirlA:SetAlpha(alphaA)
+        self.swirlB:SetAlpha(alphaB)
         self.swirlA:Show()
         self.swirlB:Show()
+
+        -- Same texture coordinates as the main swirl, so each cap continues it without a seam.
+        local u0, rowV = swirlW / SWIRL_W, rowH / SWIRL_H
+        for i = 1, CFG.rows do
+            local e = ends[i]
+            if e and e - swirlW >= 0.5 then
+                local y, u1, v0 = -(i - 1) * rowH, e / SWIRL_W, (i - 1) * rowV
+                local a, b = capA[i], capB[i]
+                a:SetPoint("TOPLEFT", parent, "TOPLEFT", swirlW, y)
+                a:SetSize(e - swirlW, rowH)
+                a:SetTexCoord(uA + u0, uA + u1, vA + v0, vA + v0 + rowV)
+                a:SetAlpha(alphaA)
+                a:Show()
+                b:SetPoint("TOPLEFT", parent, "TOPLEFT", swirlW, y)
+                b:SetSize(e - swirlW, rowH)
+                b:SetTexCoord(uB + u0 * 0.7, uB + u1 * 0.7, vB + v0 * 0.7, vB + (v0 + rowV) * 0.7)
+                b:SetAlpha(alphaB)
+                b:Show()
+            else
+                capA[i]:Hide()
+                capB[i]:Hide()
+            end
+        end
     else
         self.swirlA:Hide()
         self.swirlB:Hide()
+        for i = 1, CFG.rows do
+            capA[i]:Hide()
+            capB[i]:Hide()
+        end
     end
 
     if opts.restedGlow and self.rested and edge > 4 then

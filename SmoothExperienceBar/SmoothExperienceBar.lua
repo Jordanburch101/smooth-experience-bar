@@ -427,9 +427,17 @@ local function RenderBar()
 
     -- Overlays sit after the fill and clip at the bar end.
     local questW = min(A.quest, 1 - A.fill) * barWidth
+    local restedW = min(A.rested, max(0, 1 - A.fill - A.quest)) * barWidth
     Place(questTex, fillW, questW, back)
-    Place(restedTex, fillW + questW, min(A.rested, max(0, 1 - A.fill - A.quest)) * barWidth,
-        questW < 0.5 and back or nil)
+    Place(restedTex, fillW + questW, restedW, questW < 0.5 and back or nil)
+
+    if questW >= 0.5 then
+        liquid:SetContact(theme.quest, fillW + questW)
+    elseif restedW >= 0.5 then
+        liquid:SetContact(theme.rested, fillW + restedW)
+    else
+        liquid:SetContact(nil)
+    end
 
     flash:SetAlpha(A.flash * 0.35)
     RenderText()

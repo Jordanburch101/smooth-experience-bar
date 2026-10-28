@@ -253,6 +253,28 @@ def make_edge(path, w=32, h=48):
     write_tga(path, w, h, pixel)
 
 
+def make_foam(path, w=32, h=48):
+    """Froth where the liquid meets quest or rested XP, one per slice.
+
+    Across: bright at the contact line (left) fading into the segment, with specks of foam.
+    Down: the same ramp, flat, ramp thirds as Edge.tga so slices blend.
+    """
+    rnd = random.Random(160)
+    specks = [(rnd.random() ** 1.6 * 0.8, rnd.random(), 0.05 + rnd.random() * 0.07) for _ in range(28)]
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        a = math.exp(-u / 0.22) * 0.8
+        for sx, sy, r in specks:
+            d = math.hypot((u - sx) * w / h, v - sy)  # round specks in a non-square texture
+            a += 0.7 * math.exp(-(d / r) ** 2) * (1 - sx)
+        a *= max(0.0, 1 - u) ** 0.5
+        k = min(1.0, v * 3, (1 - v) * 3)
+        return 1, 1, 1, min(1.0, a) * math.sin(k * math.pi / 2) ** 2
+
+    write_tga(path, w, h, pixel)
+
+
 def make_ember(path, size=32):
     """Teardrop flame: wide and bright at the bottom, thin at the top."""
 
@@ -381,6 +403,7 @@ def main():
     make_mote(os.path.join(out, "Mote.tga"))
     make_glow(os.path.join(out, "Glow.tga"))
     make_edge(os.path.join(out, "Edge.tga"))
+    make_foam(os.path.join(out, "Foam.tga"))
     make_ember(os.path.join(out, "Ember.tga"))
     make_snow(os.path.join(out, "Snow.tga"))
     make_leaf(os.path.join(out, "Leaf.tga"))

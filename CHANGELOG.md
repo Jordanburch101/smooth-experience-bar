@@ -14,12 +14,16 @@ broken and now works. Leave out internal changes. Sections are
 - The liquid pours more naturally: it eases into motion instead of jumping
   to full speed, and keeps flowing when several kills land in a row
   instead of pausing on each one.
+- The liquid froths where it meets completed quest XP or rested XP, and
+  the froth builds up as it flows in.
 
 ### Fixed
 - A dark gap no longer flickers in front of the liquid while it flows into
   completed quest XP or rested XP after a big gain.
 - The end of the rested XP no longer twitches backwards before the liquid
   starts to flow.
+- The magic inside the liquid no longer stops short of the front while it
+  pours, and the front keeps its curve and bright edge during big gains.
 
 ## 1.0.0
 
