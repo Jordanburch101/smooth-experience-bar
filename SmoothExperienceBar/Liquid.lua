@@ -39,6 +39,20 @@ local SWIRL = {
     pulseRate = 0.5,
 }
 
+-- Slow clouds behind the veins for depth: dark pockets and light wisps, larger and slower than the veins.
+local CLOUDS = {
+    texture = "Nebula",
+    dark    = 0.55, -- alpha of the darkening layer
+    light   = 0.25, -- alpha of the light layer, tinted swirlB
+    scale   = 0.55, -- texture repeats per SWIRL_W px; lower = bigger clouds
+}
+
+-- Light from inside the liquid: a soft band through the middle in the theme's glow colour.
+local CORE = {
+    alpha     = 1,   -- multiplier on the core brightness
+    pulseRate = 0.2, -- Hz
+}
+
 local BUBBLES = {
     texture = "Bubble",
     blend   = "BLEND",
@@ -127,22 +141,26 @@ function Liquid.New(parent, width, height, theme, opts)
     end
     self:LayoutTips()
 
-    self.swirlA = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
-    self.swirlA:SetPoint("TOPLEFT")
-    self.swirlA:SetPoint("BOTTOMLEFT")
-
-    self.swirlB = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
-    self.swirlB:SetPoint("TOPLEFT")
-    self.swirlB:SetPoint("BOTTOMLEFT")
-
-    -- The swirl stops at the rearmost point of the front; these carry it on to each slice's end.
-    self.capA, self.capB, self.ends = {}, {}, {}
-    for i = 1, CFG.rows do
-        self.capA[i] = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
-        self.capB[i] = Tex("ARTWORK", 5, MEDIA .. "Swirl", "ADD", "REPEAT")
+    -- Textures that fill the inside of the liquid. Each is one texture up to the rearmost point of the
+    -- front plus a cap per slice carrying it on to that slice's end, so nothing spills into a dip.
+    local function Layer(sublevel, file, blend)
+        local layer = { main = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT"), caps = {}, u = 0, v = 0 }
+        layer.main:SetPoint("TOPLEFT")
+        layer.main:SetPoint("BOTTOMLEFT")
+        for i = 1, CFG.rows do
+            layer.caps[i] = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT")
+        end
+        return layer
     end
+    self.ends = {}
+    self.cloudDark = Layer(4, "Nebula", "BLEND")
+    self.cloudLight = Layer(5, "Nebula", "ADD")
+    self.core = Layer(5, "Core", "ADD")
+    self.swirlA = Layer(5, "Swirl", "ADD")
+    self.swirlB = Layer(5, "Swirl", "ADD")
+    self.cloudLight.u, self.swirlB.u = 0.5, 0.37
 
-    self.restGlow = Tex("ARTWORK", 4, MEDIA .. "Glow", "ADD")
+    self.restGlow = Tex("ARTWORK", 5, MEDIA .. "Glow", "ADD")
 
     self.glow = Tex("ARTWORK", 7, MEDIA .. "Glow", "ADD")
     self.glow:SetSize(36, height * 1.7)
@@ -160,7 +178,6 @@ function Liquid.New(parent, width, height, theme, opts)
     self.gradA, self.gradB, self.gradC = CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1)
     self.t, self.acc, self.energy, self.fizzAcc = 0, 0, 0, 0
     self.edge, self.speed, self.back = 0, 0, 0
-    self.uA, self.vA, self.uB, self.vB = 0, 0, 0.37, 0
     self.ambientAcc = {}
     self.rested = false
     self:SetTheme(theme)
@@ -171,6 +188,8 @@ function Liquid:SetTheme(theme)
     self.theme = theme
     self.phys = Merge(PHYSICS, theme.physics)
     self.swirl = Merge(SWIRL, theme.swirl)
+    self.clouds = Merge(CLOUDS, theme.clouds)
+    self.coreStyle = Merge(CORE, theme.core)
     self.bubbleStyle = Merge(BUBBLES, theme.bubbles)
     self.burst = Merge(BURST, theme.burst)
     self.levelBurst = Merge(self.burst, { mode = "throw" })
@@ -188,17 +207,15 @@ function Liquid:SetTheme(theme)
     for _, tip in ipairs(self.tips) do
         tip:SetVertexColor(unpack(theme.tip))
     end
-    local swirlFile = MEDIA .. self.swirl.texture
-    self.swirlA:SetTexture(swirlFile, "REPEAT", "REPEAT")
-    self.swirlB:SetTexture(swirlFile, "REPEAT", "REPEAT")
-    self.swirlA:SetVertexColor(unpack(theme.swirlA))
-    self.swirlB:SetVertexColor(unpack(theme.swirlB))
-    for i = 1, CFG.rows do
-        self.capA[i]:SetTexture(swirlFile, "REPEAT", "REPEAT")
-        self.capB[i]:SetTexture(swirlFile, "REPEAT", "REPEAT")
-        self.capA[i]:SetVertexColor(unpack(theme.swirlA))
-        self.capB[i]:SetVertexColor(unpack(theme.swirlB))
-    end
+    self:LayerTexture(self.swirlA, self.swirl.texture)
+    self:LayerTexture(self.swirlB, self.swirl.texture)
+    self:LayerTexture(self.cloudDark, self.clouds.texture)
+    self:LayerTexture(self.cloudLight, self.clouds.texture)
+    self:LayerColor(self.swirlA, theme.swirlA)
+    self:LayerColor(self.swirlB, theme.swirlB)
+    self:LayerColor(self.cloudDark, { 0, 0, 0 })
+    self:LayerColor(self.cloudLight, theme.swirlB)
+    self:LayerColor(self.core, theme.glow)
     self.glow:SetVertexColor(unpack(theme.glow))
     self.restGlow:SetVertexColor(theme.rested[1], theme.rested[2], theme.rested[3])
 
@@ -212,6 +229,52 @@ function Liquid:SetTheme(theme)
     for _, m in ipairs(self.motes) do
         m.active = false
         m.tex:Hide()
+    end
+end
+
+function Liquid:LayerTexture(layer, name)
+    local file = MEDIA .. name
+    layer.main:SetTexture(file, "REPEAT", "REPEAT")
+    for _, cap in ipairs(layer.caps) do cap:SetTexture(file, "REPEAT", "REPEAT") end
+end
+
+function Liquid:LayerColor(layer, c)
+    layer.main:SetVertexColor(c[1], c[2], c[3])
+    for _, cap in ipairs(layer.caps) do cap:SetVertexColor(c[1], c[2], c[3]) end
+end
+
+local function HideLayer(layer)
+    layer.main:Hide()
+    for _, cap in ipairs(layer.caps) do cap:Hide() end
+end
+
+-- ku, kv: texture units per px across and down. Caps use the same mapping as the main texture,
+-- so each continues it without a seam.
+function Liquid:DrawLayer(layer, ku, kv, alpha)
+    local back, ends, rowH, parent = self.back, self.ends, self.rowH, self.parent
+    if back < 1 or alpha <= 0.002 then
+        HideLayer(layer)
+        return
+    end
+    local u, v = layer.u, layer.v
+    local main = layer.main
+    main:SetWidth(back)
+    main:SetTexCoord(u, u + back * ku, v, v + self.height * kv)
+    main:SetAlpha(alpha)
+    main:Show()
+    local ub = u + back * ku
+    for i, cap in ipairs(layer.caps) do
+        local e = ends[i]
+        if e and e - back >= 0.5 then
+            local y = (i - 1) * rowH
+            cap:SetPoint("TOPLEFT", parent, "TOPLEFT", back, -y)
+            cap:SetSize(e - back, rowH)
+            cap:SetTexCoord(ub, u + e * ku, v + y * kv, v + (y + rowH) * kv)
+            cap:SetAlpha(alpha)
+            cap:Show()
+        else
+            cap:Hide()
+        end
     end
 end
 
@@ -630,8 +693,8 @@ function Liquid:Draw(dt)
         self.accent = accent
         if accent then
             self.glow:SetVertexColor(accent[1], accent[2], accent[3])
-            self.swirlA:SetVertexColor(accent[1], accent[2], accent[3])
-            for _, cap in ipairs(self.capA) do cap:SetVertexColor(accent[1], accent[2], accent[3]) end
+            self:LayerColor(self.swirlA, accent)
+            self:LayerColor(self.core, accent)
         end
     end
 
@@ -696,60 +759,39 @@ function Liquid:Draw(dt)
 
     self.back = max(0, back)
 
-    -- Magic veins drift with the theme's flow; faster and brighter with energy and fill speed.
-    local sw = self.swirl
-    local swirlW = self.back
-    local capA, capB = self.capA, self.capB
-    if swirlW >= 1 and opts.swirl then
+    -- Inside the liquid, back to front: dark cloud pockets, light wisps and the glowing core, then the
+    -- magic veins. All drift with the theme's flow, faster and brighter with energy and fill speed.
+    local sw, cl, co = self.swirl, self.clouds, self.coreStyle
+    local swirlA, swirlB, cloudDark, cloudLight, core = self.swirlA, self.swirlB, self.cloudDark, self.cloudLight, self.core
+    if self.back >= 1 and opts.swirl then
         local flow = 0.015 + 0.12 * energy + max(0, self.speed) / 2000
         local fu, fv = sw.flow[1], sw.flow[2]
-        self.uA = (self.uA - flow * fu * dt) % 1
-        self.vA = (self.vA - flow * fv * dt) % 1
-        self.uB = (self.uB - flow * fu * 0.6 * dt) % 1
-        self.vB = (self.vB + (0.03 - flow * fv * 0.6) * dt) % 1
-        local uA, vA, uB, vB = self.uA, self.vA, self.uB, self.vB
-        local spanU, spanV = swirlW / SWIRL_W, h / SWIRL_H
-        self.swirlA:SetTexCoord(uA, uA + spanU, vA, vA + spanV)
-        self.swirlB:SetTexCoord(uB, uB + spanU * 0.7, vB, vB + spanV * 0.7)
-        self.swirlA:SetWidth(swirlW)
-        self.swirlB:SetWidth(swirlW)
-        local pulse = sw.pulse * (0.5 + 0.5 * sin(t * sw.pulseRate * 2 * pi))
-        local alphaA = min(1, (0.12 + 0.3 * energy + pulse) * sw.alpha)
-        local alphaB = min(1, (0.08 + 0.22 * energy + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha)
-        self.swirlA:SetAlpha(alphaA)
-        self.swirlB:SetAlpha(alphaB)
-        self.swirlA:Show()
-        self.swirlB:Show()
+        swirlA.u = (swirlA.u - flow * fu * dt) % 1
+        swirlA.v = (swirlA.v - flow * fv * dt) % 1
+        swirlB.u = (swirlB.u - flow * fu * 0.6 * dt) % 1
+        swirlB.v = (swirlB.v + (0.03 - flow * fv * 0.6) * dt) % 1
+        cloudDark.u = (cloudDark.u - (0.004 + flow * fu * 0.3) * dt) % 1
+        cloudDark.v = (cloudDark.v + (0.008 - flow * fv * 0.3) * dt) % 1
+        cloudLight.u = (cloudLight.u - (0.006 + flow * fu * 0.45) * dt) % 1
+        cloudLight.v = (cloudLight.v - (0.012 + flow * fv * 0.45) * dt) % 1
+        core.u = (core.u - (0.01 + flow * 0.3) * dt) % 1
 
-        -- Same texture coordinates as the main swirl, so each cap continues it without a seam.
-        local u0, rowV = swirlW / SWIRL_W, rowH / SWIRL_H
-        for i = 1, CFG.rows do
-            local e = ends[i]
-            if e and e - swirlW >= 0.5 then
-                local y, u1, v0 = -(i - 1) * rowH, e / SWIRL_W, (i - 1) * rowV
-                local a, b = capA[i], capB[i]
-                a:SetPoint("TOPLEFT", parent, "TOPLEFT", swirlW, y)
-                a:SetSize(e - swirlW, rowH)
-                a:SetTexCoord(uA + u0, uA + u1, vA + v0, vA + v0 + rowV)
-                a:SetAlpha(alphaA)
-                a:Show()
-                b:SetPoint("TOPLEFT", parent, "TOPLEFT", swirlW, y)
-                b:SetSize(e - swirlW, rowH)
-                b:SetTexCoord(uB + u0 * 0.7, uB + u1 * 0.7, vB + v0 * 0.7, vB + (v0 + rowV) * 0.7)
-                b:SetAlpha(alphaB)
-                b:Show()
-            else
-                capA[i]:Hide()
-                capB[i]:Hide()
-            end
-        end
+        local cs = cl.scale
+        self:DrawLayer(cloudDark, cs / SWIRL_W, cs / SWIRL_H, cl.dark)
+        self:DrawLayer(cloudLight, cs * 1.4 / SWIRL_W, cs * 1.4 / SWIRL_H, cl.light * (1 + energy))
+        local glow = 0.2 + 0.07 * sin(t * co.pulseRate * 2 * pi) + 0.3 * min(1, energy)
+        self:DrawLayer(core, 0.5 / SWIRL_W, 1 / h, min(1, glow * co.alpha))
+
+        local pulse = sw.pulse * (0.5 + 0.5 * sin(t * sw.pulseRate * 2 * pi))
+        self:DrawLayer(swirlA, 1 / SWIRL_W, 1 / SWIRL_H, min(1, (0.12 + 0.3 * energy + pulse) * sw.alpha))
+        self:DrawLayer(swirlB, 0.7 / SWIRL_W, 0.7 / SWIRL_H,
+            min(1, (0.08 + 0.22 * energy + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha))
     else
-        self.swirlA:Hide()
-        self.swirlB:Hide()
-        for i = 1, CFG.rows do
-            capA[i]:Hide()
-            capB[i]:Hide()
-        end
+        HideLayer(cloudDark)
+        HideLayer(cloudLight)
+        HideLayer(core)
+        HideLayer(swirlA)
+        HideLayer(swirlB)
     end
 
     if opts.restedGlow and self.rested and edge > 4 then

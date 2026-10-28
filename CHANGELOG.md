@@ -6,6 +6,14 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.1.0
+
+### New
+- The liquid has depth: slow dark pockets and bright wisps drift behind
+  the magic veins, like a swirling potion.
+- Light glows from inside the liquid, pulsing gently and brightening when
+  you gain XP.
+
 ## 1.0.1
 
 ### New

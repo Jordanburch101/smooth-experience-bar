@@ -275,6 +275,21 @@ def make_foam(path, w=32, h=48):
     write_tga(path, w, h, pixel)
 
 
+def make_core(path, w=256, h=64):
+    """Light from inside the liquid: a soft band through the middle, brighter in patches.
+
+    Tiles across; the bar maps it once from top to bottom.
+    """
+    patches = [(TileNoise(4 * 2**i, 1, 170 + i), 0.5**i) for i in range(3)]
+
+    def pixel(x, y):
+        u, v = x / w, (y + 0.5) / h
+        band = math.exp(-((v - 0.5) / 0.26) ** 2)
+        return 1, 1, 1, band * (0.45 + 0.55 * fbm(patches, u, 0.0))
+
+    write_tga(path, w, h, pixel)
+
+
 def make_ember(path, size=32):
     """Teardrop flame: wide and bright at the bottom, thin at the top."""
 
@@ -404,6 +419,7 @@ def main():
     make_glow(os.path.join(out, "Glow.tga"))
     make_edge(os.path.join(out, "Edge.tga"))
     make_foam(os.path.join(out, "Foam.tga"))
+    make_core(os.path.join(out, "Core.tga"))
     make_ember(os.path.join(out, "Ember.tga"))
     make_snow(os.path.join(out, "Snow.tga"))
     make_leaf(os.path.join(out, "Leaf.tga"))
