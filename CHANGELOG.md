@@ -6,7 +6,7 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
-## 1.2.0
+## 1.1.1
 
 ### New
 - The front of the liquid leans forward while it pours fast, then rocks
