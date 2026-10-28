@@ -82,14 +82,18 @@ def radial(size, fn):
     return pixel
 
 
-def make_bubble(path, size=32):
+def make_bubble(path, size=64):
+    """Glassy bubble: soft rim lit from below right, faint body, a bright highlight and a small glint."""
+
     def fn(dx, dy, d):
-        ring = math.exp(-((d - 0.82) / 0.11) ** 2)
-        body = 0.12 if d < 0.82 else 0.0
-        hl = 0.9 * math.exp(-((math.hypot(dx + 0.32, dy + 0.32)) / 0.18) ** 2)
-        a = min(1.0, ring * 0.85 + body + hl)
-        if d > 1:
-            a = 0.0
+        lit = 0.55 + 0.45 * max(0.0, (dx + dy) / 1.414)  # light passing through, toward the bottom right
+        ring = math.exp(-((d - 0.8) / 0.14) ** 2) * lit
+        body = 0.2 * min(1.0, max(0.0, (0.8 - d) / 0.15))
+        hl = math.exp(-(math.hypot((dx + 0.3) / 1.3, dy + 0.34) / 0.24) ** 2)
+        glint = 0.7 * math.exp(-(math.hypot(dx - 0.4, dy - 0.38) / 0.12) ** 2)
+        a = min(1.0, ring * 0.9 + body + hl + glint)
+        if d > 0.95:
+            a *= max(0.0, 1 - (d - 0.95) / 0.05)
         return 1, 1, 1, a
 
     write_tga(path, size, size, radial(size, fn))

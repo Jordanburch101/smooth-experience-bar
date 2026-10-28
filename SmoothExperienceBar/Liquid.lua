@@ -14,7 +14,7 @@ local CFG = {
     rows        = 15,      -- horizontal slices that make up the liquid front
     step        = 1 / 120, -- fixed physics step
     energyDecay = 0.8,     -- per second
-    bubbles     = 20,      -- pool sizes
+    bubbles     = 36,      -- pool sizes
     motes       = 64,
     edgeW       = 6,       -- width of the bright line texture along the front, px
     edgeCore    = 0.7,     -- where the line sits across Edge.tga (EDGE_CORE in make_media.py)
@@ -60,7 +60,8 @@ local BUBBLES = {
     energyRate = 14,        -- extra per second at full energy
     rise    = { 12, 26 },   -- px/s
     size    = { 3, 6 },
-    alpha   = 0.6,
+    alpha   = 0.45,
+    drift   = 1,            -- slow drifters anywhere in the liquid, per second per unit of rate
 }
 
 -- Motes thrown off by XP gains, turn-ins and level-ups.
@@ -176,8 +177,9 @@ function Liquid.New(parent, width, height, theme, opts)
     end
 
     self.gradA, self.gradB, self.gradC = CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1)
-    self.t, self.acc, self.energy, self.fizzAcc = 0, 0, 0, 0
+    self.t, self.acc, self.energy, self.fizzAcc, self.driftAcc = 0, 0, 0, 0, 0
     self.edge, self.speed, self.back = 0, 0, 0
+    self.flowX, self.flowY = 0, 0
     self.ambientAcc = {}
     self.rested = false
     self:SetTheme(theme)
@@ -219,11 +221,12 @@ function Liquid:SetTheme(theme)
     self.glow:SetVertexColor(unpack(theme.glow))
     self.restGlow:SetVertexColor(theme.rested[1], theme.rested[2], theme.rested[3])
 
-    local bs = self.bubbleStyle
+    -- Bubbles take on some of the veins' colour so they belong to the liquid.
+    local bs, bc, vc = self.bubbleStyle, theme.bubble, theme.swirlA
     for _, b in ipairs(self.bubbles) do
         b.tex:SetTexture(MEDIA .. bs.texture)
         b.tex:SetBlendMode(bs.blend)
-        b.tex:SetVertexColor(unpack(theme.bubble))
+        b.tex:SetVertexColor(Lerp(bc[1], vc[1], 0.5), Lerp(bc[2], vc[2], 0.5), Lerp(bc[3], vc[3], 0.5))
     end
     -- Particles from the previous theme would look out of place.
     for _, m in ipairs(self.motes) do
@@ -502,16 +505,26 @@ function Liquid:EmitAmbient(em, edge)
         RandRange(em.size, 8), from, to, em, true)
 end
 
-function Liquid:EmitBubble(x)
+-- Fizz rises from the bottom, mostly small. Drifters start anywhere in the liquid and rise slowly.
+-- Both are carried along by the swirl and circle in small eddies.
+function Liquid:EmitBubble(x, drifter)
     if not self.opts.bubbles then return end
     local bs = self.bubbleStyle
+    local s1, s2 = bs.size[1], bs.size[2]
     for _, b in ipairs(self.bubbles) do
         if not b.active then
-            b.x, b.y = x, Rand(2, 6)
-            b.vx, b.vy = Rand(4, 14), Rand(bs.rise[1], bs.rise[2])
-            b.size = Rand(bs.size[1], bs.size[2])
-            b.phase, b.freq = Rand(0, 6.28), Rand(4, 8)
-            b.pop = nil
+            if drifter then
+                b.x, b.y = x, Rand(3, self.height * 0.6)
+                b.vx, b.vy = Rand(-1, 2), Rand(bs.rise[1] * 0.25, bs.rise[1] * 0.5)
+                b.size = Rand(s1 * 0.8, s2 * 0.9)
+                b.phase, b.freq, b.sway = Rand(0, 6.28), Rand(1.2, 2.4), 2.5
+            else
+                b.x, b.y = x, Rand(2, 6)
+                b.vx, b.vy = Rand(2, 8), Rand(bs.rise[1], bs.rise[2])
+                b.size = random() < 0.6 and Rand(s1 * 0.5, s1 * 0.8) or Rand(s1 * 0.8, s2 * 0.8)
+                b.phase, b.freq, b.sway = Rand(0, 6.28), Rand(3, 6), 1.5
+            end
+            b.age, b.pop = 0, nil
             b.active = true
             b.tex:Show()
             return
@@ -536,15 +549,19 @@ function Liquid:UpdateParticles(dt)
                     b.tex:SetAlpha(bubbleAlpha * (1 - p))
                 end
             else
-                b.x = b.x + (b.vx + self.speed * 0.3) * dt
-                b.y = b.y + b.vy * dt
-                if b.y >= h - b.size * 0.5 or b.x > edge - 2 then
-                    b.pop = 0
+                b.age = b.age + dt
+                b.x = b.x + (b.vx + self.flowX + self.speed * 0.3) * dt
+                b.y = b.y + (b.vy + self.flowY) * dt
+                -- Fades in, and grows a little on the way up as the pressure drops.
+                local size = b.size * (1 + 0.25 * b.y / h)
+                if b.y >= h - size * 0.5 or b.x > edge - 2 then
+                    b.pop, b.size = 0, size -- the pop grows from here
                 end
-                b.tex:SetSize(b.size, b.size)
-                b.tex:SetAlpha(bubbleAlpha)
+                b.tex:SetSize(size, size)
+                b.tex:SetAlpha(bubbleAlpha * min(1, b.age / 0.25))
             end
-            b.tex:SetPoint("CENTER", parent, "BOTTOMLEFT", b.x + sin(b.phase + t * b.freq) * 1.5, b.y)
+            local a = b.phase + t * b.freq
+            b.tex:SetPoint("CENTER", parent, "BOTTOMLEFT", b.x + sin(a) * b.sway, b.y + cos(a) * b.sway * 0.6)
         end
     end
 
@@ -659,6 +676,11 @@ function Liquid:Update(dt, edge)
     while self.fizzAcc >= 1 do
         self.fizzAcc = self.fizzAcc - 1
         if edge > 16 then self:EmitBubble(Rand(4, edge - 8)) end
+    end
+    self.driftAcc = self.driftAcc + dt * bs.rate * bs.drift
+    while self.driftAcc >= 1 do
+        self.driftAcc = self.driftAcc - 1
+        if edge > 24 then self:EmitBubble(Rand(4, edge - 14), true) end
     end
 
     if self.ambient and self.opts.ambient then
@@ -775,6 +797,8 @@ function Liquid:Draw(dt)
         cloudLight.u = (cloudLight.u - (0.006 + flow * fu * 0.45) * dt) % 1
         cloudLight.v = (cloudLight.v - (0.012 + flow * fv * 0.45) * dt) % 1
         core.u = (core.u - (0.01 + flow * 0.3) * dt) % 1
+        -- How fast the veins move on screen, px/s with y up, so bubbles can ride along with them.
+        self.flowX, self.flowY = flow * fu * SWIRL_W, -flow * fv * SWIRL_H
 
         local cs = cl.scale
         self:DrawLayer(cloudDark, cs / SWIRL_W, cs / SWIRL_H, cl.dark)
@@ -787,6 +811,7 @@ function Liquid:Draw(dt)
         self:DrawLayer(swirlB, 0.7 / SWIRL_W, 0.7 / SWIRL_H,
             min(1, (0.08 + 0.22 * energy + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha))
     else
+        self.flowX, self.flowY = 0, 0
         HideLayer(cloudDark)
         HideLayer(cloudLight)
         HideLayer(core)

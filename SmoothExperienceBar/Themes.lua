@@ -7,7 +7,7 @@
 --   swirl     = { texture, flow = { u, v }, alpha, pulse, pulseRate }      the veins inside
 --   clouds    = { texture, dark, light, scale }                           slow clouds behind the veins
 --   core      = { alpha, pulseRate }                                      glow through the middle (glow colour)
---   bubbles   = { texture, blend, rate, energyRate, rise, size, alpha }
+--   bubbles   = { texture, blend, rate, energyRate, rise, size, alpha, drift }
 --   burst     = { texture, blend, mode = "throw" | "attract", buoyancy, drag, spin, twinkle }
 --   ambient   = { { area, rate, energyRate, texture, blend, size, life, vx, vy, buoyancy, drag,
 --                   spin, twinkle, grow, alpha, from, to }, ... }          continuous particles

@@ -13,6 +13,8 @@ broken and now works. Leave out internal changes. Sections are
   the magic veins, like a swirling potion.
 - Light glows from inside the liquid, pulsing gently and brightening when
   you gain XP.
+- Bubbles are smaller and glassier, take on the colour of the magic, and
+  drift and circle along with the swirl.
 
 ## 1.0.1
 
