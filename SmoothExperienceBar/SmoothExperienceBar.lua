@@ -258,8 +258,10 @@ local function ApplyRounding()
     end
 end
 
+local previewTheme -- theme hovered in the settings theme picker; shown on the bar but never saved
+
 local function ApplyTheme()
-    theme = ns.Themes.Get(db.theme)
+    theme = ns.Themes.Get(previewTheme or db.theme)
     if theme.Resolve then
         theme = theme:Resolve() -- e.g. class or faction colours, known once the player has loaded
     end
@@ -803,8 +805,40 @@ end)
 
 bar:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+-- Theme picker hover: the menu reports which option the mouse enters but not when it closes, so
+-- watch for the close and go back to the saved theme if nothing was picked.
+local previewWatch
+
+local function EndThemePreview()
+    if previewWatch then
+        previewWatch:Cancel()
+        previewWatch = nil
+    end
+    if previewTheme then
+        previewTheme = nil
+        ApplyTheme()
+        RenderText(true)
+    end
+end
+
+function Core.PreviewTheme(key)
+    if not (Menu and Menu.GetManager) or not ns.Themes.list[key] then return end
+    local shown = previewTheme or db.theme
+    previewTheme = key ~= db.theme and key or nil
+    if key ~= shown then
+        ApplyTheme()
+        RenderText(true)
+    end
+    if not previewWatch then
+        previewWatch = C_Timer.NewTicker(0.1, function()
+            if not Menu.GetManager():IsAnyMenuOpen() then EndThemePreview() end
+        end)
+    end
+end
+
 local SETTING_APPLY = {
     theme = function()
+        previewTheme = nil -- picked from the menu: the saved theme takes over
         ApplyTheme()
         RenderText(true)
     end,

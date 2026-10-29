@@ -46,10 +46,16 @@ local function Button(name, text, onClick, tooltip)
     layout:AddInitializer(CreateSettingsButtonInitializer(name, text, onClick, tooltip, true))
 end
 
+-- Hovering a theme in the open menu shows it on the bar; the menu calls onEnter with the option.
+local function PreviewOption(option)
+    ns.Core.PreviewTheme(option.value)
+end
+
 local function ThemeOptions()
     local container = Settings.CreateControlTextContainer()
     for _, key in ipairs(ns.Themes.order) do
-        container:Add(key, ns.Themes.list[key].name)
+        local option = container:Add(key, ns.Themes.list[key].name)
+        if option then option.onEnter = PreviewOption end
     end
     return container:GetData()
 end

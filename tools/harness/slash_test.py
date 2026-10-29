@@ -125,6 +125,35 @@ check("|cFF00FF00" in step("theme=test", "SlashCmdList.SMOOTHEXPERIENCEBAR('test
 check(list(ns.Themes.Get("test").rested.values()) == [0.31, 0.565, 1, 0.545], "missing theme fields fall back")
 lua.execute("__settings.theme:SetValue('luxthos')")
 
+print("== theme picker hover")
+theme_dd = next(i for i in items if i.kind == "dropdown" and i.key == "theme")
+
+
+def hover(key):
+    # The menu calls each option's onEnter with the option when the mouse enters it.
+    opts = theme_dd.getOptions()
+    opt = next(opts[i + 1] for i in range(len(opts)) if opts[i + 1].value == key)
+    opt.onEnter(opt)
+
+
+saved = lambda: G.__settings.theme.GetValue(G.__settings.theme)
+lua.execute("__menuOpen = true")
+hover("test")
+check("|cFF00FF00" in step("hover Test", "SlashCmdList.SMOOTHEXPERIENCEBAR('test quest')", 0.5)
+      and saved() == "luxthos", "hovered theme shown on the bar, not saved")
+hover("luxthos")
+check("|cFF00FF00" not in step("hover Luxthos", None, 0.5), "hovering the saved theme shows it again")
+hover("test")
+lua.execute("__menuOpen = false")
+check("|cFF00FF00" not in step("menu closed", None, 0.5) and saved() == "luxthos",
+      "closing the menu without picking goes back to the saved theme")
+lua.execute("__menuOpen = true")
+hover("fel")
+hover("test")
+lua.execute("__settings.theme:SetValue('test'); __menuOpen = false")
+check("|cFF00FF00" in step("picked Test", None, 0.5) and saved() == "test", "picking a hovered theme keeps it")
+lua.execute("__settings.theme:SetValue('luxthos')")
+
 print("== preview buttons")
 for item in items:
     if item.kind == "button":

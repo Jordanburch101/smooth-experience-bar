@@ -320,17 +320,30 @@ function Settings.CreateSlider(_, s, o)
     assert(type(o.fmt(s:GetValue())) == "string", "slider formatter for " .. s.key)
     addInit({ kind = "slider", key = s.key })
 end
+-- The client calls getOptions again each time the menu opens; getOptions is kept for tests to do so.
 function Settings.CreateDropdown(_, s, getOptions)
     local opts = getOptions()
     assert(#opts > 0, "empty dropdown " .. s.key)
-    addInit({ kind = "dropdown", key = s.key, options = opts })
+    addInit({ kind = "dropdown", key = s.key, options = opts, getOptions = getOptions })
 end
+-- Add returns the option table, which the menu passes to the option's onEnter on hover.
 function Settings.CreateControlTextContainer()
     local c = { data = {} }
-    function c:Add(value, label) self.data[#self.data + 1] = { value = value, label = label } end
+    function c:Add(value, label, tooltip)
+        local data = { text = label, label = label, tooltip = tooltip, value = value }
+        self.data[#self.data + 1] = data
+        return data
+    end
     function c:GetData() return self.data end
     return c
 end
+__menuOpen = false
+local menuManager = {}
+function menuManager:IsAnyMenuOpen()
+    assert(self == menuManager, "IsAnyMenuOpen is a method of the menu manager")
+    return __menuOpen
+end
+Menu = { GetManager = function() return menuManager end }
 function Settings.RegisterAddOnCategory(cat) __settingsCategory = cat end
 function Settings.OpenToCategory(id) __openedCategory = id end
 MinimalSliderWithSteppersMixin = { Label = { Right = 1 } }

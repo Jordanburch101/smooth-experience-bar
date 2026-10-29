@@ -14,6 +14,9 @@ broken and now works. Leave out internal changes. Sections are
   to every character the first time it logs in.
 - Copy another character's settings from the new Profile section of the
   settings page.
+- Hover over a theme in the theme picker to see it on the bar straight
+  away. Close the menu without picking one and the bar goes back to your
+  theme.
 
 ## 1.1.1
 
