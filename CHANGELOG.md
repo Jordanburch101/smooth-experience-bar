@@ -6,6 +6,12 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.1.3
+
+### Fixed
+- After copying another character's settings, the settings page now shows
+  the copied values straight away instead of the old ones.
+
 ## 1.1.2
 
 ### New

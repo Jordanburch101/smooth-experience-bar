@@ -285,7 +285,9 @@ local Setting = {}
 Setting.__index = Setting
 function Setting:SetValueChangedCallback(fn) self.cb = fn end
 function Setting:GetValue() return self.tbl[self.key] end
+-- Like the client: no change, no callback. Writing the table directly then calling SetValue is a no-op.
 function Setting:SetValue(v)
+    if self.tbl[self.key] == v then return end
     self.tbl[self.key] = v
     if self.cb then self.cb(self, v) end
 end

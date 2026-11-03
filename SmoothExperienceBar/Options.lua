@@ -127,10 +127,13 @@ function Options.Register(savedDB, defaultValues)
     Settings.RegisterAddOnCategory(category)
 end
 
--- After the values changed underneath the page (a copied profile), push them to its controls.
-function Options.Refresh()
+-- Set every control from another profile's values, defaults where it has none. Going through the
+-- control fires the same callbacks as the player changing it, so the bar and the page both follow.
+function Options.SetAll(values)
     for key, setting in pairs(registered) do
-        setting:SetValue(db[key])
+        local v = values[key]
+        if v == nil then v = defaults[key] end
+        setting:SetValue(v)
     end
 end
 

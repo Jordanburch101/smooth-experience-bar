@@ -823,12 +823,9 @@ end
 
 function Core.PreviewTheme(key)
     if not (Menu and Menu.GetManager) or not ns.Themes.list[key] then return end
-    local shown = previewTheme or db.theme
     previewTheme = key ~= db.theme and key or nil
-    if key ~= shown then
-        ApplyTheme()
-        RenderText(true)
-    end
+    ApplyTheme()
+    RenderText(true)
     if not previewWatch then
         previewWatch = C_Timer.NewTicker(0.1, function()
             if not Menu.GetManager():IsAnyMenuOpen() then EndThemePreview() end
@@ -866,8 +863,12 @@ function Core.OnSettingChanged(key)
     if apply then apply() end
 end
 
+local function CopyValue(v)
+    return type(v) == "table" and { unpack(v) } or v
+end
+
 function Core.ResetPosition()
-    db.point = { unpack(DEFAULTS.point) }
+    db.point = CopyValue(DEFAULTS.point)
     db.width, db.height, db.scale = DEFAULTS.width, DEFAULTS.height, DEFAULTS.scale
     ApplyScale()
     ApplySize()
@@ -876,25 +877,6 @@ end
 
 -- Profiles: every character's settings, keyed "Name - Realm".
 local profiles, profileKey
-
-local function CopyValue(v)
-    return type(v) == "table" and { unpack(v) } or v
-end
-
--- Re-apply every setting, after the profile's values changed underneath them.
-local function ApplyAll()
-    if not ns.Themes.list[db.theme] then db.theme = DEFAULTS.theme end
-    liquid:SetOptions(db)
-    ApplyTheme()
-    ApplyRounding()
-    ApplyScale()
-    ApplySize()
-    ApplyPosition()
-    ApplyLock()
-    ApplyBlizzardBar()
-    UpdateSessionTexts()
-    RenderText(true)
-end
 
 function Core.ProfileKey()
     return profileKey
@@ -910,18 +892,15 @@ function Core.OtherProfiles()
     return keys
 end
 
--- Copy another character's settings onto this character and apply them.
+-- Copy another character's settings onto this character. Everything but the position goes through
+-- its settings control, so the page and the bar follow as if the player had set each one.
 function Core.CopyProfile(key)
-    local src = profiles and profiles[key]
-    if not src or key == profileKey then return false end
-    for k, v in pairs(DEFAULTS) do
-        if src[k] == nil then db[k] = CopyValue(v) else db[k] = CopyValue(src[k]) end
-    end
-    db.layout = src.layout
-    ApplyAll()
-    ns.Options.Refresh()
+    local src = profiles[key]
+    if not src then return end
+    db.point = CopyValue(src.point or DEFAULTS.point)
+    ApplyPosition()
+    ns.Options.SetAll(src)
     DEFAULT_CHAT_FRAME:AddMessage("|cffa070ffSmoothXP|r Copied settings from " .. key .. ".")
-    return true
 end
 
 function Core.ResetSession()
@@ -988,11 +967,8 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- Settings used to be shared by the whole account. Keep them as the starting point for each
         -- character's own profile, so nobody loses their setup on updating.
         if not root.profiles then
-            local legacy = {}
-            for k, v in pairs(root) do legacy[k] = v end
-            wipe(root)
-            root.profiles = {}
-            if next(legacy) then root.legacy = legacy end
+            root = { profiles = {}, legacy = next(root) and root or nil }
+            SmoothExperienceBarDB = root
         end
         profiles = root.profiles
         profileKey = (UnitName("player") or "Unknown") .. " - " .. (GetRealmName() or "Unknown")
@@ -1007,9 +983,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
             db.layout = LAYOUT_VERSION
         end
         for k, v in pairs(DEFAULTS) do
-            if db[k] == nil then
-                db[k] = type(v) == "table" and { unpack(v) } or v
-            end
+            if db[k] == nil then db[k] = CopyValue(v) end
         end
         if not ns.Themes.list[db.theme] then db.theme = DEFAULTS.theme end
         liquid:SetOptions(db)
