@@ -181,10 +181,23 @@ RAID_CLASS_COLORS = {
     WARLOCK = { r = 0.53, g = 0.53, b = 0.93 },
 }
 
-function UnitXP() return __player.xp end
-function UnitXPMax() return __player.max end
-function UnitLevel() return __player.level end
-function GetXPExhaustion() return __player.rested > 0 and __player.rested or nil end
+-- Secret values (Forever runs the Midnight API): set __player.secret and the XP functions return
+-- them (__player.secretRested for rested XP alone); __secret() makes one for event arguments. As in
+-- the client, arithmetic, ordering and math functions on them fail. Lua 5.1 cannot make == or a
+-- truth test fail on a table, so those slip through here. Era and Anniversary have no
+-- issecretvalue; tests that stand for them set it to nil.
+local SecretValue = {}
+function __secret() return setmetatable({}, SecretValue) end
+local function secret(v, on) if on then return __secret() end return v end
+function issecretvalue(v) return getmetatable(v) == SecretValue end
+
+function UnitXP() return secret(__player.xp, __player.secret) end
+function UnitXPMax() return secret(__player.max, __player.secret) end
+function UnitLevel() return secret(__player.level, __player.secret) end
+function GetXPExhaustion()
+    return secret(__player.rested > 0 and __player.rested or nil, __player.secret or __player.secretRested)
+end
+-- Era and Anniversary; the Forever tests remove it, as Forever may not have it.
 function GetMaxPlayerLevel() return 70 end
 function GetNumQuestLogEntries() return #__quests end
 function GetQuestLogTitle(i)

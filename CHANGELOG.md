@@ -11,6 +11,17 @@ broken and now works. Leave out internal changes. Sections are
 ### Fixed
 - After copying another character's settings, the settings page now shows
   the copied values straight away instead of the old ones.
+- WoW Forever: the bar now recognises level 60 as max level, so it hides
+  there (or shows a full bar with time played, if you keep it at max
+  level).
+- WoW Forever: Hide Default Experience Bar now hides the game's tracking
+  bars (experience and reputation), and they stay hidden after level-ups
+  and Edit Mode. Turning the option off brings back the bars the game
+  wants shown.
+- WoW Forever: no more errors when the game hides XP from addons during
+  combat. The bar catches up as soon as the XP can be read again, and
+  XP/hour counts what you earned in the meantime, level-ups included.
+- WoW Forever: hidden quests no longer add to the completed quest XP.
 
 ## 1.1.2
 

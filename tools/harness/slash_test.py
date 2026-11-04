@@ -223,6 +223,7 @@ lua.execute("""
         { isHeader = false, questID = 11, done = true, xp = 9000 },
         { isHeader = false, questID = 12, done = false, xp = 5000 },
         { isHeader = false, questID = 13, ready = true, xp = 6000 },
+        { isHeader = false, isHidden = true, questID = 14, done = true, xp = 50000 },
     }
     C_QuestLog.GetNumQuestLogEntries = function() return #log end
     C_QuestLog.GetInfo = function(i) return log[i] end
@@ -231,17 +232,107 @@ lua.execute("""
     GetQuestLogRewardXP = function(id) for _, q in ipairs(log) do if q.questID == id then return q.xp end end return 0 end
     __fire('QUEST_LOG_UPDATE')
 """)
-check("|cFFFF97004.8%" in step("modern quest log", None, 2), "modern quest log: done and ready quests counted")
+check("|cFFFF97004.8%" in step("modern quest log", None, 2), "modern quest log: done and ready quests counted, hidden ones not")
+
+# Forever has no MainMenuExpBar; its bars sit in StatusTrackingBarManager.barContainers and the UI
+# shows them with SetShown rather than Show.
+lua.execute("""
+    MainMenuExpBar = nil
+    StatusTrackingBarManager = CreateFrame('Frame', nil, UIParent)
+    StatusTrackingBarManager.barContainers = { CreateFrame('Frame', nil, UIParent), CreateFrame('Frame', nil, UIParent) }
+    __settings.hideBlizzardBar:SetValue(true)
+""")
+containers = lua.eval("StatusTrackingBarManager.barContainers")
+check(not containers[1].shown and not containers[2].shown, "Forever: bar containers hidden")
+lua.execute("StatusTrackingBarManager.barContainers[1]:SetShown(true)")
+check(not containers[1].shown, "Forever: containers stay hidden when the game calls SetShown(true)")
+lua.execute("__settings.hideBlizzardBar:SetValue(false)")
+check(containers[1].shown and containers[2].shown and G.StatusTrackingBarManager.shown, "Forever: bars restored")
+lua.execute("""
+    local c = StatusTrackingBarManager.barContainers[2]
+    c:Hide()
+    __settings.hideBlizzardBar:SetValue(true)
+    c:SetShown(true)
+    __settings.hideBlizzardBar:SetValue(false)
+""")
+check(containers[2].shown, "Forever: a bar the game showed while hidden comes back when the option is off")
+lua.execute("""
+    local c = StatusTrackingBarManager.barContainers[2]
+    __settings.hideBlizzardBar:SetValue(true)
+    c:SetShown(false)
+    __settings.hideBlizzardBar:SetValue(false)
+""")
+check(not containers[2].shown, "Forever: a bar the game hid meanwhile stays hidden when the option is off")
+
+# XP values can be secret in combat: nothing may break, and the bar and XP/hour catch up afterwards.
+chardb = G.SmoothExperienceBarCharDB
+lua.execute("__player.secret = true; __combat = true; __player.xp = __player.xp + 5000")
+during = step("secret XP gain", "__fire('PLAYER_XP_UPDATE', 'player'); __fire('UPDATE_EXHAUSTION')", 2)
+check("204,931 / 311,490" in during, "secret XP: bar keeps its last values, no errors")
+slash("session", 1)
+check(chardb.lastXP is None, "secret XP: session reset waits for readable XP")
+lua.execute("__player.xp = __player.xp + 1000; __fire('PLAYER_XP_UPDATE', 'player')")
+slash("test", 1)
+slash("test off", 1)
+lua.execute("__player.secret = false; __combat = false")
+after = step("XP readable again", None, 2)
+check("210,931" in after, "secret XP: bar catches up once the values are readable")
+check(chardb.gainedXP == 0 and chardb.lastXP == 210931, "secret XP: session restarts from the first readable XP")
+lua.execute("__player.xp = __player.xp + 3000; __fire('PLAYER_XP_UPDATE', 'player')")
+check(chardb.gainedXP == 3000, "secret XP: the first kill after that counts")
+# Reset in combat with no XP change before the values are readable again.
+lua.execute("__player.secret = true; SlashCmdList.SMOOTHEXPERIENCEBAR('session'); __player.secret = false")
+run(1.5)
+lua.execute("__player.xp = __player.xp + 3000; __fire('PLAYER_XP_UPDATE', 'player')")
+check(chardb.gainedXP == 3000, "secret XP: after a reset in combat, the first readable kill counts")
+lua.execute("__player.secret = true; __player.xp = __player.xp + 2000; __fire('PLAYER_XP_UPDATE', 'player')")
+run(0.5)
+lua.execute("__player.secret = false")
+check("218,931" in step("XP readable again", None, 2) and chardb.gainedXP == 5000,
+      "secret XP: XP/hour counts gains made while secret")
+# Two levels while secret: the rest of 57, all of 58 (estimated at the current level's size), 1,000 into 59.
+lua.execute("""
+    __player.secret = true
+    __player.level, __player.xp = 59, 1000
+    __fire('PLAYER_XP_UPDATE', 'player'); __fire('PLAYER_LEVEL_UP', 59)
+""")
+run(0.5)
+lua.execute("__player.secret = false")
+check("Level 59 | 1,000 / 311,490" in step("two levels while secret", None, 6), "secret XP: bar catches up over two levels")
+check(chardb.gainedXP == 5000 + (311490 - 218931) + 1000 + 311490 and chardb.lastLevel == 59,
+      "secret XP: XP/hour counts every level gained while secret")
+lua.execute("__player.secretRested = true; __player.xp = 1500")
+check("1,500 / 311,490" in step("rested secret", "__fire('PLAYER_XP_UPDATE', 'player')", 1),
+      "secret rested XP alone does not stop the bar")
+lua.execute("__player.secretRested = false")
+step("secret turn-in reward", "__fire('QUEST_TURNED_IN', 11, __secret(), 0)", 1)  # must not error
 
 print("== max level")
 lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('test off'); __player.level = 70; __player.xp = 0")
 check(step("showMaxLevel off", "__fire('PLAYER_XP_UPDATE', 'player')").startswith("[hidden]"), "hidden at max level")
 check("Max Level" in step("showMaxLevel on", "__settings.showMaxLevel:SetValue(true)"), "full bar at max level")
+# Forever: level cap 60, and GetMaxPlayerLevel may be missing.
+lua.execute("""
+    __settings.showMaxLevel:SetValue(false)
+    __eraGetMaxPlayerLevel = GetMaxPlayerLevel
+    GetMaxPlayerLevel, MAX_PLAYER_LEVEL = nil, nil
+    __player.level, __player.xp, __player.max = 59, 1000, 200000
+""")
+check(not step("Forever level 59", "__fire('PLAYER_XP_UPDATE', 'player')").startswith("[hidden]"), "Forever: shown below the cap")
+lua.execute("__player.level, __player.xp, __player.max = 60, 0, 0")
+check(step("Forever level 60", "__fire('PLAYER_LEVEL_UP', 60)").startswith("[hidden]"),
+      "Forever: no XP left to earn counts as max level")
+lua.execute("__player.max = 209800; IsPlayerAtEffectiveMaxLevel = function() return true end")
+check(step("Forever at cap", "__fire('PLAYER_XP_UPDATE', 'player')").startswith("[hidden]"),
+      "Forever: IsPlayerAtEffectiveMaxLevel counts as max level")
+lua.execute("IsPlayerAtEffectiveMaxLevel = nil; GetMaxPlayerLevel = __eraGetMaxPlayerLevel")
 
 print("== per-character profiles")
 # A fresh client session whose saved settings come from before profiles, when they were account-wide.
+# It stands for Era and Anniversary, which have no issecretvalue.
 lua2 = LuaRuntime(unpack_returned_tuples=True)
 lua2.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
+lua2.execute("issecretvalue = nil")
 lua2.execute("SmoothExperienceBarDB = { theme = 'fel', width = 820, glass = true, layout = 2, point = { 'TOP', 'UIParent', 'TOP', 0, -90 } }")
 G2 = lua2.globals()
 G2.__loadAddon(ADDON.replace("\\", "/"), "SmoothExperienceBar")

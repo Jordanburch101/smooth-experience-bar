@@ -281,15 +281,39 @@ local questXP = 0
 local sim -- table while /seb test is active, nil for live data
 local maxed = false -- at max level with "Show at Max Level" on
 
+-- Forever runs the Midnight API, where the client can hand addons secret values (in combat, for
+-- example): they can be shown but not compared or used in arithmetic. Era and Anniversary have no
+-- issecretvalue, so nothing is ever secret there.
+local function Secret(...)
+    if not issecretvalue then return false end
+    for i = 1, select("#", ...) do
+        if issecretvalue((select(i, ...))) then return true end
+    end
+    return false
+end
+
+-- Returns nothing while the client keeps the XP values secret; callers try again later. Secret
+-- rested XP alone only hides the rested segment.
 local function GetData()
     if sim then
         return sim.level, sim.cur, sim.max, sim.quest, sim.rested
     end
-    return UnitLevel("player"), UnitXP("player"), max(UnitXPMax("player") or 1, 1), questXP, GetXPExhaustion() or 0
+    local level, cur, mx, rested = UnitLevel("player"), UnitXP("player"), UnitXPMax("player"), GetXPExhaustion()
+    if Secret(level, cur, mx) then return end
+    if Secret(rested) then rested = nil end
+    return level, cur, max(mx or 1, 1), questXP, rested or 0
 end
 
 local function MaxLevel()
     return (GetMaxPlayerLevel and GetMaxPlayerLevel()) or MAX_PLAYER_LEVEL or 70
+end
+
+-- Forever may not report its own level cap (GetMaxPlayerLevel missing, or the retail cap), so a
+-- level with no XP left to earn counts as max level too.
+local function AtMaxLevel(level)
+    if IsPlayerAtEffectiveMaxLevel and IsPlayerAtEffectiveMaxLevel() then return true end
+    local mx = UnitXPMax("player")
+    return level >= MaxLevel() or (not Secret(mx) and mx == 0)
 end
 
 local IsQuestComplete = (C_QuestLog and C_QuestLog.IsComplete) or IsQuestComplete
@@ -302,7 +326,7 @@ local function ScanQuestXPModern()
     local total = 0
     for i = 1, C_QuestLog.GetNumQuestLogEntries() do
         local info = C_QuestLog.GetInfo(i)
-        local questID = info and not info.isHeader and info.questID
+        local questID = info and not info.isHeader and not info.isHidden and info.questID
         if questID and questID > 0 and (C_QuestLog.IsComplete(questID)
             or (C_QuestLog.ReadyForTurnIn and C_QuestLog.ReadyForTurnIn(questID))) then
             total = total + (GetQuestLogRewardXP(questID) or 0)
@@ -347,12 +371,41 @@ end
 
 local played = { level = 0, total = 0, at = 0 } -- /played times and when we received them
 local requestingPlayed, mutedChatFrames = false, {}
+local xpPending = false -- an XP change arrived while the values were secret
 
 local function ResetSession()
     cdb.startTime = time()
     cdb.gainedXP = 0
-    cdb.lastXP = UnitXP("player")
-    cdb.maxXP = UnitXPMax("player")
+    local level, cur, mx = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
+    if Secret(level, cur, mx) then
+        -- The first readable XP becomes the baseline; the ticker takes it as soon as it can.
+        cdb.lastLevel, cdb.lastXP, cdb.maxXP = nil, nil, nil
+        xpPending = true
+    else
+        cdb.lastLevel, cdb.lastXP, cdb.maxXP = level, cur, mx
+    end
+end
+
+-- Adds the XP gained since the last reading to the session total, for XP/hour. Several levels can
+-- pass between readings while the values are secret.
+local function CountGainedXP()
+    local level, cur, mx = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
+    xpPending = Secret(level, cur, mx)
+    if xpPending then return end
+    if not cdb.startTime then ResetSession() end
+    if cdb.lastXP and cdb.maxXP then
+        local last = cdb.lastLevel or level
+        -- XP can wrap a frame before UnitLevel catches up: that is a level too.
+        local levels = max(level - last, cur < cdb.lastXP and 1 or 0)
+        local gained = cur - cdb.lastXP
+        if levels > 0 then
+            -- Levels in between are estimated at the current level's size.
+            gained = cdb.maxXP - cdb.lastXP + cur + (levels - 1) * mx
+        end
+        cdb.gainedXP = cdb.gainedXP + gained
+        level = max(level, last + levels) -- a wrap counted early is not counted again
+    end
+    cdb.lastLevel, cdb.lastXP, cdb.maxXP = level, cur, mx
 end
 
 local function RestoreChatFrames()
@@ -386,6 +439,7 @@ local function UpdateSessionTexts()
     if not (cdb and cdb.startTime) then return end
     local now = time()
     local level, cur, mx = GetData()
+    if not level then return end
     local since = played.at > 0 and now - played.at or 0
 
     levelTime:SetShown(db.showLevelTime)
@@ -571,11 +625,15 @@ local function OnUpdate(self, elapsed)
     RenderBar()
 end
 
+local refreshPending = false -- XP values were secret; the 1-second ticker tries again
+
 local function Refresh()
     local level, cur, mx, quest, rested = GetData()
+    refreshPending = not level
+    if refreshPending then return end
 
     local wasMaxed = maxed
-    maxed = not sim and level >= MaxLevel()
+    maxed = not sim and AtMaxLevel(level)
     if maxed then
         if not db.showMaxLevel then
             bar:Hide()
@@ -669,6 +727,9 @@ end
 local function StartSim()
     if sim then return end
     local level, cur, mx, quest, rested = GetData()
+    if not level then -- secret right now: start from what the bar last showed
+        level, cur, mx, quest, rested = max(T.level, 1), T.cur, T.max, T.quest, T.rested
+    end
     sim = { level = level, cur = cur, max = mx, quest = quest, rested = rested }
 end
 
@@ -733,27 +794,53 @@ grip:SetScript("OnMouseUp", function()
     SavePosition()
 end)
 
--- The default XP bar differs between clients; hide whichever of these exist.
+-- The default XP bar differs between clients; hide whichever of these exist. Forever has only
+-- StatusTrackingBarManager, and its bar containers are listed on it rather than named.
 local BLIZZARD_BARS = { "MainMenuExpBar", "StatusTrackingBarManager", "MainStatusTrackingBarContainer" }
 local hookedBars, hiddenBars = {}, {}
 
+local function BlizzardBars()
+    local list, seen = {}, {}
+    local function add(f)
+        if type(f) == "table" and f.Hide and not seen[f] then
+            seen[f] = true
+            list[#list + 1] = f
+        end
+    end
+    for _, name in ipairs(BLIZZARD_BARS) do add(_G[name]) end
+    local manager = StatusTrackingBarManager
+    if manager and type(manager.barContainers) == "table" then
+        for _, container in ipairs(manager.barContainers) do add(container) end
+    end
+    return list
+end
+
 local function ApplyBlizzardBar()
-    for _, name in ipairs(BLIZZARD_BARS) do
-        local f = _G[name]
-        if f then
-            if not hookedBars[f] then
-                hookedBars[f] = true
-                hooksecurefunc(f, "Show", function(self)
-                    if db.hideBlizzardBar then self:Hide() end
+    for _, f in ipairs(BlizzardBars()) do
+        if not hookedBars[f] then
+            hookedBars[f] = true
+            -- Remember what the game wanted shown, so turning the option off brings it back.
+            hooksecurefunc(f, "Show", function(self)
+                if db.hideBlizzardBar then
+                    hiddenBars[self] = true
+                    self:Hide()
+                end
+            end)
+            -- The modern UI and Edit Mode show these with SetShown(true) rather than Show.
+            if f.SetShown then
+                hooksecurefunc(f, "SetShown", function(self, shown)
+                    if not db.hideBlizzardBar then return end
+                    hiddenBars[self] = shown or nil
+                    if shown then self:Hide() end
                 end)
             end
-            if db.hideBlizzardBar then
-                if f:IsShown() then hiddenBars[f] = true end
-                f:Hide()
-            elseif hiddenBars[f] then
-                hiddenBars[f] = nil
-                f:Show()
-            end
+        end
+        if db.hideBlizzardBar then
+            if f:IsShown() then hiddenBars[f] = true end
+            f:Hide()
+        elseif hiddenBars[f] then
+            hiddenBars[f] = nil
+            f:Show()
         end
     end
 end
@@ -1028,7 +1115,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
 
     elseif event == "QUEST_TURNED_IN" then
         -- arg2 is the XP reward; drop it now rather than waiting for the quest log rescan.
-        if arg2 and arg2 > 0 and questXP > 0 then
+        if arg2 and not Secret(arg2) and arg2 > 0 and questXP > 0 then
             questXP = max(0, questXP - arg2)
             Refresh()
         end
@@ -1044,14 +1131,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         C_Timer.After(0.1, Refresh)
 
     elseif event == "PLAYER_XP_UPDATE" then
-        if not cdb.startTime then ResetSession() end
-        local cur = UnitXP("player")
-        local gained = cur - cdb.lastXP
-        if gained < 0 then
-            gained = cdb.maxXP - cdb.lastXP + cur
-        end
-        cdb.gainedXP = cdb.gainedXP + gained
-        cdb.lastXP, cdb.maxXP = cur, UnitXPMax("player")
+        CountGainedXP()
         Refresh()
 
     else
@@ -1071,7 +1151,11 @@ bar:RegisterEvent("TIME_PLAYED_MSG")
 bar:SetScript("OnUpdate", OnUpdate)
 
 C_Timer.NewTicker(1, function()
-    if cdb and bar:IsShown() then UpdateSessionTexts() end
+    if not cdb then return end
+    -- Catch up on XP that changed while its values were secret.
+    if xpPending then CountGainedXP() end
+    if refreshPending then Refresh() end
+    if bar:IsShown() then UpdateSessionTexts() end
 end)
 
 --------------------------------------------------------------------------------
