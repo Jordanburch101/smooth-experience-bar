@@ -6,11 +6,9 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
-## 1.1.3
+## 1.1.4
 
 ### Fixed
-- After copying another character's settings, the settings page now shows
-  the copied values straight away instead of the old ones.
 - WoW Forever: the bar now recognises level 60 as max level, so it hides
   there (or shows a full bar with time played, if you keep it at max
   level).
@@ -22,6 +20,12 @@ broken and now works. Leave out internal changes. Sections are
   combat. The bar catches up as soon as the XP can be read again, and
   XP/hour counts what you earned in the meantime, level-ups included.
 - WoW Forever: hidden quests no longer add to the completed quest XP.
+
+## 1.1.3
+
+### Fixed
+- After copying another character's settings, the settings page now shows
+  the copied values straight away instead of the old ones.
 
 ## 1.1.2
 
