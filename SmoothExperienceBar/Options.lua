@@ -163,7 +163,12 @@ function Options.Register(savedDB, defaultValues)
     Slider("width", "Width", "Bar width. Also set by dragging the corner grip while unlocked.", 200, 1600, 10, "%d")
     Slider("height", "Height", "Bar height; text scales with it.", 16, 60, 1, "%d")
     Checkbox("showMaxLevel", "Show at Max Level", "Keep the bar visible at max level, showing time played.")
-    Checkbox("hideBlizzardBar", "Hide Default Experience Bar", "Hide the game's own experience bar.")
+    Checkbox("hideBlizzardBar", "Hide Default Experience Bar",
+        "Hide the game's own experience bar. Has no effect while Use Default Experience Bar is on.")
+    Checkbox("showBar", "Show Separate Bar",
+        "The bar you can move and resize. Untick to keep only the default experience bar's.")
+    Checkbox("skinDefaultBar", "Use Default Experience Bar",
+        "Show the liquid inside the game's own experience bar too, in its place and at its size, with the time this level and your XP on it.")
 
     Header("Text")
     Checkbox("showLevelTime", "Time This Level", "Played time at this level (total played at max level).")
@@ -183,7 +188,8 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("restedGlow", "Rested Glow", "A soft glow in the liquid while you have rested XP.")
     Checkbox("flash", "Level-Up Flash", "Flash the bar when you level up.")
     Checkbox("glass", "Glass", "Reflections along the bar, as if it were a glass tube.")
-    Checkbox("rounding", "Rounded Liquid", "Shade the top and bottom of the bar so the liquid looks round.")
+    Checkbox("rounding", "Rounded Liquid",
+        "Shade the top and bottom of the separate bar so the liquid looks round. The default experience bar's liquid is always round.")
 
     -- Settings are saved per character. Pick another character, then copy their settings onto this one.
     Header("Profile")
@@ -213,6 +219,8 @@ function Options.Register(savedDB, defaultValues)
     Button("Stop Preview", "Stop", function() Core.Test("off") end, "Return the bar to your real XP.")
     Button("Reset Position & Size", "Reset", Core.ResetPosition, "Move the bar back to the top of the screen at its default size.")
     Button("Reset Session", "Reset", Core.ResetSession, "Restart session time and XP/hour.")
+    Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,
+        "Pick where the bar goes, its theme, effects and text again, with live previews.")
 
     LayoutRows()
     Settings.RegisterAddOnCategory(category)
@@ -226,6 +234,14 @@ function Options.SetAll(values)
         if v == nil then v = defaults[key] end
         setting:SetValue(v)
     end
+end
+
+-- Change one setting through its control, as the player would. False when there is no control.
+function Options.Set(key, value)
+    local setting = registered[key]
+    if not setting then return false end
+    setting:SetValue(value)
+    return true
 end
 
 function Options.Open()

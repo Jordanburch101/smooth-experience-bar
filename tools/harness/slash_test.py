@@ -28,11 +28,13 @@ lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
 G = lua.globals()
 ns = G.__loadAddon(ADDON.replace("\\", "/"), "SmoothExperienceBar")
 lua.execute("__fire('ADDON_LOADED', 'SmoothExperienceBar'); __fire('PLAYER_ENTERING_WORLD', true, false)")
+G.ns_defaults = ns.Core.Defaults()
 
 state = lua.eval("""function()
     local t = {}
     for _, r in ipairs(__regions) do
-        if r.kind == "FontString" and r.parent == SmoothExperienceBarFrame and r.text and r.text ~= ""
+        local bar = SmoothExperienceBarFrame
+        if r.kind == "FontString" and (r.parent == bar or r.parent.parent == bar) and r.text and r.text ~= ""
             and r.shown then
             t[#t + 1] = r.text
         end
@@ -70,6 +72,99 @@ run(6)
 check(bool(G.ChatFrame1.events.TIME_PLAYED_MSG), "chat frames get TIME_PLAYED_MSG back")
 check("Time this level: 4m" in state(), "played time shown")
 
+print("== setup wizard")
+# A new player: the wizard opens shortly after the first login, and its previews play XP gains.
+wiz = lambda: ns.Wizard.State()
+st = wiz()
+check(st.frame is not None and st.frame.shown and st.page == "welcome", "wizard opens on a new player's first login")
+check(st.ui.welcomeSkip.text == "Skip, use the defaults", "wizard: a new player's skip keeps the defaults")
+check(lua.eval("UISpecialFrames[1]") == "SmoothExperienceBarSetup", "wizard: Escape closes it like the game's windows")
+bg_x = lambda f: f.Bg.points.TOPLEFT
+check(st.frame.portraitHidden and st.frame.buttonBarHidden and not st.frame.Inset.shown
+      and st.frame.title == "Smooth Experience Bar Setup" and (bg_x(st.frame).x, bg_x(st.frame).y) == (6, -21),
+      "wizard: the game's window as Road to Sixty uses it, background from under the title bar")
+wui = st.ui
+cards = wui.cards
+
+
+def click(button, seconds=0.1):
+    button.scripts.OnClick(button, "LeftButton")
+    run(seconds)
+
+
+click(wui.start)
+check(wiz().page == "place" and wui.step.text == "Step 1 of 4", "wizard: Set it up goes to where the bar goes")
+scene = wui.scene
+check(scene.bar.frame.shown and not scene.skin.frame.shown, "wizard: separate bar picked to start with, previewed")
+click(cards.place.both)
+check(scene.bar.frame.shown and scene.skin.frame.shown and cards.place.both.radio.checked
+      and not cards.place.separate.radio.checked, "wizard: picking Both previews both bars")
+click(wui.next)
+check(wiz().page == "theme", "wizard: then the theme")
+click(cards.theme.fel)
+check(cards.theme.fel.radio.checked, "wizard: theme picked")
+click(wui.next)
+click(cards.effects.calm)
+check(wiz().page == "effects" and cards.effects.calm.radio.checked, "wizard: effects picked")
+click(wui.next)
+click(cards.text.none)
+check(wiz().page == "text" and cards.text.none.radio.checked, "wizard: text picked")
+click(wui.next)
+summary = wiz().pages.done.summary.text
+check(wiz().page == "done" and "Bar: Both" in summary and "Theme: Fel" in summary and "Effects: Calm" in summary
+      and "Text: Just the bar" in summary, f"wizard: summary of the picks ({summary})")
+check(wui.next.text == "Finish", "wizard: last step finishes")
+click(wui.next, 1)
+mine = G.SmoothExperienceBarDB.profiles["Testchar - Mockrealm"]
+check(not st.frame.shown and mine.setupPending is None, "wizard: Finish closes it for good")
+check(mine.showBar and mine.skinDefaultBar and mine.theme == "fel" and not mine.waves and not mine.lightning
+      and not mine.showLevelTime and not mine.showQuestRested,
+      "wizard: the picks are applied")
+check(G.__settings.theme.GetValue(G.__settings.theme) == "fel", "wizard: applied through the settings controls")
+check("204,931" in step("wizard closed", None, 1), "wizard: its XP previews stop and the bar is back to live XP")
+
+lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('setup')")
+run(0.2)
+check(st.frame.shown and wiz().choice.place == "both" and wiz().choice.effects == "calm" and wiz().choice.text == "none",
+      "/seb setup opens it again, starting from the current settings")
+click(wui.start)
+click(cards.place.default)
+click(wui.next)
+click(wui.next)
+click(wui.next)
+check(wiz().page == "done" and "Text:" not in wiz().pages.done.summary.text,
+      "wizard: no text step when only the game's bar is used")
+click(wui.back)
+check(wui.step.text == "Step 3 of 3", f"wizard: step count follows ({wui.step.text})")
+click(wui.later, 1)
+check(not st.frame.shown and mine.setupPending and mine.setupSnoozed, "wizard: Ask Me Later closes it until the next login")
+lua.execute("__fire('PLAYER_ENTERING_WORLD', false, true)")
+run(3)
+check(not st.frame.shown, "wizard: not again on a reload")
+lua.execute("__fire('PLAYER_ENTERING_WORLD', true, false)")
+run(3)
+check(st.frame.shown and wiz().page == "welcome", "wizard: back at the next login")
+click(st.frame.CloseButton, 1)
+check(not st.frame.shown and mine.setupPending, "wizard: the window's close button means ask me later too")
+lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('setup')")
+run(0.2)
+click(wui.welcomeSkip, 1)
+check(not st.frame.shown and mine.setupPending is None and mine.setupSnoozed is None, "wizard: Skip ends it")
+check(G.SmoothExperienceBarDB.setupOffered, "wizard: offered once for the whole account")
+lua.execute("__fire('PLAYER_ENTERING_WORLD', true, false)")
+run(3)
+check(not st.frame.shown, "wizard: skipped, it stays closed at the next login")
+# Back to the defaults for the tests below.
+lua.execute("""
+    local d = ns_defaults
+    for _, k in ipairs({ "showBar", "skinDefaultBar", "theme", "waves", "swirl", "bubbles", "sparkles", "ambient",
+                         "lightning", "restedGlow", "glass", "rounding", "flash", "showLevelTime", "showSessionTime",
+                         "showXPHour", "showQuestRested" }) do
+        __settings[k]:SetValue(d[k])
+    end
+""")
+check("Time this level" in step("defaults again", None, 1), "wizard: settings back to the defaults")
+
 print("== settings page")
 layout = G.__settingsRows()
 items = [layout[i + 1] for i in range(len(layout))]
@@ -78,9 +173,9 @@ for item in items:
 category = G.__settingsCategory
 check(category.name == "Smooth Experience Bar" and category.frame is not None, "canvas category registered")
 check(any(i.kind == "dropdown" and i.key == "theme" for i in items), "theme dropdown")
-check(sum(1 for i in items if i.kind == "button") == 7, "seven buttons")
+check(sum(1 for i in items if i.kind == "button") == 8, "eight buttons")
 setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n = n + 1 end return n end")()
-check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 24,
+check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 26,
       "a row for every setting")
 inside = lua.eval("""function(page)
     for _, row in ipairs(__settingsRows()) do
@@ -123,7 +218,7 @@ for cmd in ["unlock", "lock", "reset", "session"]:
 
 print("== every setting toggled off and back on")
 for key in ["showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
-            "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "locked", "hideBlizzardBar", "resetOnReload", "showMaxLevel"]:
+            "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "locked", "hideBlizzardBar", "showBar", "skinDefaultBar", "resetOnReload", "showMaxLevel"]:
     default = G.__settings[key].GetValue(G.__settings[key])
     lua.execute(f"__settings[{key!r}]:SetValue({str(not default).lower()})")
     step(f"{key}={not default}", "SlashCmdList.SMOOTHEXPERIENCEBAR('test')", 1)
@@ -188,6 +283,8 @@ for item in items:
     if item.kind == "button":
         item.onClick()
         step(f"button: {item.name}", None, 2)
+check(st.frame.shown, "Setup Wizard button opens the wizard")
+click(wui.welcomeSkip, 1)
 
 print("== mouse, lock and resize")
 bar = G.SmoothExperienceBarFrame
@@ -293,6 +390,131 @@ lua.execute("""
 """)
 check(not containers[2].shown, "Forever: a bar the game hid meanwhile stays hidden when the option is off")
 
+# Use Default Experience Bar: a second bar drawn over the game's own XP bar (setting, or /seb skin),
+# next to the separate bar or instead of it (Show Separate Bar).
+lua.execute("__chat = {}")
+slash("skin", 0.2)
+check(any("Could not find the default experience bar" in m for m in G.__chat.values())
+      and lua.eval("SmoothExperienceBarDefaultFrame == nil"), "skin: says so and makes nothing when there is no XP bar")
+slash("skin", 0.2)
+lua.execute("""
+    local container = StatusTrackingBarManager.barContainers[1]
+    local rep = CreateFrame('Frame', nil, container)
+    rep.StatusBar = CreateFrame('Frame', nil, rep)
+    local xp = CreateFrame('Frame', nil, container)
+    xp.StatusBar = CreateFrame('Frame', nil, xp)
+    xp.StatusBar:SetSize(571, 13)
+    xp.StatusBar:SetFrameStrata('MEDIUM')
+    xp.StatusBar:SetFrameLevel(4)
+    xp.ExhaustionTick = CreateFrame('Frame', nil, xp)
+    container.bars = { [1] = rep, [4] = xp }
+    -- The segment lines sit in a frame above the bar.
+    local lines = CreateFrame('Frame', nil, container)
+    lines:SetFrameStrata('MEDIUM')
+    lines:SetFrameLevel(30)
+    __xpBar = xp
+    __chat = {}
+""")
+bar = G.SmoothExperienceBarFrame
+slash("skin", 1)
+skin = G.SmoothExperienceBarDefaultFrame
+check(lua.eval("SmoothExperienceBarDefaultFrame.parent == __xpBar") and (skin.w, skin.h) == (571, 13) and skin.shown,
+      "skin: on the default XP bar, at its size")
+check(skin.GetFrameStrata(skin) == "MEDIUM" and skin.level > 4 and skin.scale == 1, "skin: drawn above its fill")
+check(lua.eval("SmoothExperienceBarFrame.parent == UIParent") and bar.shown and (bar.w, bar.h) == (600, 30)
+      and bar.scale == 0.65, "both: the separate bar stays as it was")
+check(any("Drawing over" in m and "571x13" in m for m in G.__chat.values()), "skin: reported in chat")
+
+# A view's text line starting with prefix: its anchors ("POINT relPoint x y"), whether shown, its parent.
+line = lua.eval("""function(frame, prefix)
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and (r.parent == frame or r.parent.parent == frame) and r.text
+            and r.text:find(prefix, 1, true) == 1 then
+            local out = {}
+            for p, a in pairs(r.points) do out[#out + 1] = string.format("%s %s %g %g", p, a.relPoint, a.x, a.y) end
+            return { anchors = table.concat(out, ","), shown = r.shown, parent = r.parent }
+        end
+    end
+end""")
+# The skin view's text: the time this level on the left, the XP in the middle, nothing else.
+skin_texts = lua.eval("""function()
+    local out = {}
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.parent.parent == SmoothExperienceBarDefaultFrame and r.shown
+            and r.text and r.text ~= "" then
+            out[#out + 1] = r.points.LEFT and ("left: " .. r.text) or r.text
+        end
+    end
+    table.sort(out)
+    return table.concat(out, " | ")
+end""")
+time_line = line(skin, "Time this level")
+check(time_line.shown and time_line.parent.level > 30 and time_line.parent.GetFrameStrata(time_line.parent) == "MEDIUM",
+      "skin: text above the segment lines")
+check(skin_texts() == "204,931 / 311,490 (106,559) | left: Time this level: 6m",
+      f"both: the default bar shows the time this level and XP only ({skin_texts()})")
+# Rounded Liquid: shade shown and both end masks on every texture of a view.
+rounded = lua.eval("""function(frame)
+    local shade, masked, textures = false, true, 0
+    for _, r in ipairs(__regions) do
+        if r.parent == frame and r.kind == "Texture" then
+            textures = textures + 1
+            if r.file and r.file:find("Shade$") then shade = r.shown end
+            if not r.masks or #r.masks ~= 2 then masked = false end
+        end
+    end
+    return shade and masked and textures > 0
+end""")
+check(rounded(skin) and not rounded(bar), "skin: always rounded, while the separate bar follows its setting (off)")
+lua.execute("__settings.rounding:SetValue(true)")
+check(rounded(skin) and rounded(bar), "Rounded Liquid on: the separate bar rounds, the default bar stays round")
+lua.execute("__settings.rounding:SetValue(false)")
+check(rounded(skin) and not rounded(bar), "Rounded Liquid off: only the separate bar changes")
+check(line(bar, "Time this level").shown and line(bar, "Leveling in").shown and line(bar, "Level 57").shown,
+      "both: the separate bar keeps all its lines")
+
+# Hovering the default bar: a tooltip with what the separate bar shows around itself.
+tooltip = lambda: [G.GameTooltip.lines[i + 1] for i in range(len(G.GameTooltip.lines))]
+lua.execute("SmoothExperienceBarDefaultFrame.scripts.OnEnter(SmoothExperienceBarDefaultFrame)")
+lines = tooltip()
+print("  tooltip:", lines)
+check(G.GameTooltip.shown and lua.eval("GameTooltip.owner == SmoothExperienceBarDefaultFrame"), "skin: tooltip on hover")
+check(lines[0] == "Level 57" and "Experience = 204,931 / 311,490 (65.8%)" in lines and "Remaining = 106,559" in lines
+      and "Completed quests = |cFFFF97004.8%|r (15,000 XP)" in lines and "Rested = |cFF4F90FF6.4%|r (20,000 XP)" in lines,
+      "skin tooltip: XP, remaining, completed and rested XP in the theme's colours")
+check(any(l.startswith("Time this level = ") for l in lines) and any(l.startswith("Time this session = ") for l in lines)
+      and any(l.startswith("Leveling in = ") for l in lines) and any(l.startswith("XP per hour = ") for l in lines)
+      and lines[-1] == "Right-click for settings", "skin tooltip: session times, leveling time, XP/hour and the settings hint")
+lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('test')")
+run(1.2)
+check("Experience = 229,850 / 311,490 (73.8%)" in tooltip(), f"skin tooltip: stays current while open ({tooltip()[1]})")
+lua.execute("SmoothExperienceBarDefaultFrame.scripts.OnLeave(SmoothExperienceBarDefaultFrame)")
+run(1.2)
+check(not G.GameTooltip.shown, "skin tooltip: hidden on leave, and the ticker does not bring it back")
+slash("test off", 2)
+lua.execute("__settings.showBar:SetValue(false)")
+check(not bar.shown and skin.shown, "separate bar off: only the default bar's shown")
+check(skin_texts() == "204,931 / 311,490 (106,559) | left: Time this level: 6m",
+      f"default bar only: still no lines around it ({skin_texts()})")
+lua.execute("__settings.showLevelTime:SetValue(false)")
+check("left: Level 57" in skin_texts(), "Time This Level off: the default bar shows the level instead")
+lua.execute("__settings.showLevelTime:SetValue(true)")
+check("left: Time this level" in skin_texts(), "Time This Level back on: the default bar shows it again")
+slash("test", 4)
+check("229,850" in skin_texts(), "default bar only: still animates with the separate bar hidden")
+slash("test off", 2)
+lua.execute("__xpBar.StatusBar:SetSize(700, 15)")
+run(1.5)
+check((skin.w, skin.h) == (700, 15), "skin: follows the XP bar's size")
+lua.execute("__settings.hideBlizzardBar:SetValue(true)")
+check(containers[1].shown, "skin: the default bar is not hidden while drawn over")
+lua.execute("__settings.hideBlizzardBar:SetValue(false)")
+lua.execute("__settings.showBar:SetValue(true)")
+check(bar.shown and line(bar, "Leveling in").anchors == "LEFT BOTTOMLEFT 0 -18",
+      "separate bar back: its lines under it as before")
+step("setting off", "__settings.skinDefaultBar:SetValue(false)", 0.2)
+check(not skin.shown and bar.shown and (bar.w, bar.h) == (600, 30), "skin off: only the separate bar, as it was")
+
 # XP values can be secret in combat: nothing may break, and the bar and XP/hour catch up afterwards.
 chardb = G.SmoothExperienceBarCharDB
 lua.execute("__player.secret = true; __combat = true; __player.xp = __player.xp + 5000")
@@ -361,7 +583,7 @@ print("== per-character profiles")
 # It stands for Era and Anniversary, which have no issecretvalue.
 lua2 = LuaRuntime(unpack_returned_tuples=True)
 lua2.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
-lua2.execute("issecretvalue = nil")
+lua2.execute("issecretvalue = nil; __interface = 11509")
 lua2.execute("SmoothExperienceBarDB = { theme = 'fel', width = 820, glass = true, layout = 2, point = { 'TOP', 'UIParent', 'TOP', 0, -90 } }")
 G2 = lua2.globals()
 G2.__loadAddon(ADDON.replace("\\", "/"), "SmoothExperienceBar")
@@ -369,6 +591,20 @@ lua2.execute("__fire('ADDON_LOADED', 'SmoothExperienceBar'); __fire('PLAYER_ENTE
 mine = lua2.eval("SmoothExperienceBarDB.profiles['Testchar - Mockrealm']")
 check(mine is not None and mine.theme == "fel" and mine.width == 820 and mine.glass,
       "old account-wide settings carried into this character's profile")
+for _ in range(240):
+    G2.__step(1 / 60)
+setup2 = lua2.eval("SmoothExperienceBarSetup")
+check(setup2 is not None and setup2.shown and mine.setupPending and lua2.eval("SmoothExperienceBarDB.setupOffered"),
+      "someone who had the addon before the wizard sees it once after updating")
+has_text = lua2.eval("""function(text)
+    for _, r in ipairs(__regions) do if r.text == text then return true end end
+    return false
+end""")
+check(has_text("Skip, keep my settings") and not has_text("Skip, use the defaults"),
+      "updating player: skipping keeps their settings, and says so")
+lua2.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('setup')")
+era_bg = lua2.eval("SmoothExperienceBarSetup.Bg.points.TOPLEFT")
+check((era_bg.x, era_bg.y) == (2, -21), "Era: the window's background keeps the classic border's own inset")
 check(lua2.eval("SmoothExperienceBarDB.theme") is None and lua2.eval("SmoothExperienceBarDB.legacy.theme") == "fel",
       "old settings moved out of the top level and kept for other characters")
 copy_dd = [i for i in lua2.eval("__settingsRows()").values() if i.kind == "dropdown" and i.key == "copyFrom"]
@@ -384,6 +620,18 @@ check(mine.theme == "frost" and mine.width == 640 and not mine.glass and not min
       "copying another character's profile replaces this character's settings")
 check(G2.SmoothExperienceBarFrame.w == 640, "copied size applied to the bar")
 check(G2.__settings.theme.GetValue(G2.__settings.theme) == "frost", "settings page shows the copied values")
+
+# Another character on an account that has had the wizard: no wizard.
+lua3 = LuaRuntime(unpack_returned_tuples=True)
+lua3.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
+lua3.execute("SmoothExperienceBarDB = { setupOffered = true, profiles = { ['Alt - Mockrealm'] = { theme = 'fel' } } }")
+lua3.globals().__loadAddon(ADDON.replace("\\", "/"), "SmoothExperienceBar")
+lua3.execute("__fire('ADDON_LOADED', 'SmoothExperienceBar'); __fire('PLAYER_ENTERING_WORLD', true, false)")
+for _ in range(240):
+    lua3.globals().__step(1 / 60)
+check(lua3.eval("SmoothExperienceBarSetup") is None
+      and lua3.eval("SmoothExperienceBarDB.profiles['Testchar - Mockrealm'].setupPending") is None,
+      "the wizard is offered once per account: not again on another character")
 check(any("Copied settings from Alt - Mockrealm" in m for m in G2.__chat.values()), "copy confirmed in chat")
 
 if failures:

@@ -11,3 +11,4 @@ Themes.lua
 Liquid.lua
 SmoothExperienceBar.lua
 Options.lua
+Wizard.lua

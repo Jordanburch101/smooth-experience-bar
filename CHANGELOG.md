@@ -6,6 +6,24 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.2.0
+
+### New
+- Use Default Experience Bar: show the liquid and its effects inside the
+  game's own experience bar too, with the time this level and your XP on
+  it. Hover it for the rest: XP remaining, completed and rested XP, session
+  time, time to level and XP/hour. It keeps the game's frame and moves and
+  resizes with it, Edit Mode included. Turn it on in the settings or with
+  `/seb skin`.
+- Show Separate Bar: untick it to keep only the default experience bar's
+  liquid, or keep both.
+- Setup wizard: pick where the bar goes, its theme, how lively it is and
+  what text it shows, each with live previews. It opens once on your
+  account: for new players, and after this update for everyone else,
+  starting from your current settings. Ask Me Later brings it back at the
+  next login, Skip changes nothing. Open it any time with `/seb setup` or
+  from the settings.
+
 ## 1.1.5
 
 ### Fixed

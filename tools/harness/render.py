@@ -91,6 +91,8 @@ class Session:
         self.lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
         self.G = self.lua.globals()
         # Item access: inside a class, attribute names starting with __ get mangled.
+        # A character that has done the setup, so the wizard does not open and play XP gains.
+        self.lua.execute("SmoothExperienceBarDB = { profiles = { ['Testchar - Mockrealm'] = {} } }")
         self.G["__loadAddon"](addon_dir.replace("\\", "/"), "SmoothExperienceBar")
         self._step = self.G["__step"]
         apply = "".join(f"__settings[{k!r}]:SetValue({lua_value(v)}); " for k, v in (settings or {}).items())

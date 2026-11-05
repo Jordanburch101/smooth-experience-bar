@@ -62,14 +62,16 @@ function Region:SetResizeBounds(...) self.bounds = { ... } end
 function Region:StartSizing(point) self.sizing = point end
 function Region:SetFrameLevel(l) self.level = l end
 function Region:GetFrameLevel() return self.level or 1 end
--- Showing a hidden frame runs its OnShow, as in the client. SetShown does not go through Show.
+-- Showing a hidden frame runs its OnShow and hiding a shown one its OnHide, as in the client.
+-- SetShown does not go through Show or Hide.
 local function setShown(self, v)
     local was = self.shown
     self.shown = not not v
     if self.shown and not was and self.scripts.OnShow then self.scripts.OnShow(self) end
+    if was and not self.shown and self.scripts.OnHide then self.scripts.OnHide(self) end
 end
 function Region:Show() setShown(self, true) end
-function Region:Hide() self.shown = false end
+function Region:Hide() setShown(self, false) end
 function Region:IsShown() return self.shown end
 function Region:SetShown(v) setShown(self, v) end
 function Region:SetScrollChild(child) self.scrollChild = child end
@@ -79,7 +81,28 @@ function Region:SetVerticalScroll(v) self.vscroll = v end
 function Region:GetVerticalScrollRange() return 0 end
 function Region:SetAlpha(a) self.alpha = a end
 function Region:SetScale(s) self.scale = s end
-function Region:SetFrameStrata() end
+local STRATA = { BACKGROUND = true, LOW = true, MEDIUM = true, HIGH = true, DIALOG = true,
+                 FULLSCREEN = true, FULLSCREEN_DIALOG = true, TOOLTIP = true }
+function Region:SetFrameStrata(s)
+    assert(STRATA[s], "bad frame strata " .. tostring(s))
+    self.strata = s
+end
+function Region:GetFrameStrata() return self.strata or (self.parent and self.parent:GetFrameStrata()) or "MEDIUM" end
+function Region:SetParent(p)
+    assert(p == nil or (type(p) == "table" and p.kind == "Frame"), "SetParent needs a frame")
+    self.parent = p
+end
+function Region:GetParent() return self.parent end
+function Region:GetChildren()
+    local out = {}
+    for _, f in ipairs(__frames) do
+        if f.parent == self then out[#out + 1] = f end
+    end
+    return unpack(out)
+end
+function Region:IsVisible()
+    return self.shown and (not self.parent or self.parent:IsVisible())
+end
 function Region:SetClampedToScreen() end
 function Region:SetMovable() end
 function Region:RegisterForDrag() end
@@ -107,6 +130,11 @@ function Region:SetShadowColor() end
 function Region:SetShadowOffset() end
 function Region:SetTextColor() end
 function Region:SetJustifyH() end
+function Region:SetJustifyV() end
+function Region:SetWordWrap() end
+function Region:SetToplevel() end
+function Region:SetChecked(v) self.checked = not not v end
+function Region:GetChecked() return self.checked end
 function Region:SetText(t) self.text = t end
 function Region:SetFormattedText(fmt, ...) self.text = string.format(fmt, ...) end
 function Region:GetStringWidth()
@@ -137,7 +165,16 @@ function Region:RemoveMaskTexture(mask)
         if m == mask then table.remove(self.masks, i) return end
     end
 end
-function Region:CreateFontString(_, layer) return NewRegion("FontString", self, layer, 0) end
+-- Font objects the game defines; the client errors on any other name.
+local FONT_OBJECTS = {
+    GameFontNormal = true, GameFontNormalSmall = true, GameFontNormalLarge = true, GameFontNormalHuge = true,
+    GameFontHighlight = true, GameFontHighlightSmall = true, GameFontHighlightLarge = true,
+    GameFontHighlightHuge = true, GameFontDisableSmall = true,
+}
+function Region:CreateFontString(_, layer, template)
+    assert(template == nil or FONT_OBJECTS[template], "unknown font object " .. tostring(template))
+    return NewRegion("FontString", self, layer, 0)
+end
 
 -- Rect relative to the region's parent, top-left origin, y down.
 function Region:Rect()
@@ -174,7 +211,8 @@ local ROW_TEMPLATES = {
     SettingsDropdownControlTemplate = true, SettingButtonControlTemplate = true,
     SettingsListSectionHeaderTemplate = true,
 }
-local TEMPLATES = { MinimalScrollBar = true }
+local TEMPLATES = { MinimalScrollBar = true, UIPanelButtonTemplate = true, UIRadioButtonTemplate = true,
+                    ButtonFrameTemplate = true }
 local RowTemplate = {}
 function RowTemplate.Init(self, initializer)
     assert(self.GetElementData and self:GetElementData() == initializer, "row Init without its GetElementData")
@@ -199,6 +237,15 @@ function CreateFrame(_, name, parent, template)
     if name then _G[name] = f end
     if ROW_TEMPLATES[template] then
         f.rowTemplate, f.Init, f.Release = template, RowTemplate.Init, RowTemplate.Release
+    end
+    -- The game's window: background, inset, a title and a close button that hides it.
+    if template == "ButtonFrameTemplate" then
+        f.Bg = NewRegion("Texture", f, "BACKGROUND", 0)
+        f.Bg:SetPoint("TOPLEFT", 2, -21)
+        f.Inset = CreateFrame("Frame", nil, f)
+        f.CloseButton = CreateFrame("Button", nil, f)
+        f.CloseButton.scripts.OnClick = function() f:Hide() end
+        function f:SetTitle(text) self.title = text end
     end
     -- With the gamepad UI on, Forever's SmartNavigation hooks CreateFrame and, for a frame made
     -- inside the open settings panel, rebuilds the panel's navigation state from the caller's code,
@@ -289,6 +336,12 @@ function C_Timer.NewTicker(d, fn)
     return t
 end
 
+UISpecialFrames = {}
+function ButtonFrameTemplate_HidePortrait(f) f.portraitHidden = true end
+function ButtonFrameTemplate_HideButtonBar(f) f.buttonBarHidden = true end
+-- Forever's build; the tests for Era and Anniversary change it.
+__interface = 16001
+function GetBuildInfo() return "1.0.0", "1", "Nov 1 2026", __interface end
 NUM_CHAT_WINDOWS = 1
 ChatFrame1 = NewRegion("Frame", nil)
 ChatFrame1.events.TIME_PLAYED_MSG = true
@@ -335,6 +388,8 @@ GameTooltip = NewRegion("Frame", UIParent)
 GameTooltip.shown = false
 function GameTooltip:SetOwner(owner) self.owner, self.lines = owner, {} end
 function GameTooltip:AddLine(text) self.lines[#self.lines + 1] = text end
+function GameTooltip:AddDoubleLine(left, right) self.lines[#self.lines + 1] = left .. " = " .. right end
+function GameTooltip:IsOwned(frame) return self.owner == frame end
 
 -- Native Settings API, with the signatures of the forever branch of the game's UI source
 -- (Blizzard_Settings.lua, Blizzard_SettingControls.lua), which Era and Anniversary share.
