@@ -6,6 +6,13 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.1.5
+
+### Fixed
+- WoW Forever: no more "SmoothExperienceBar has been blocked from an
+  action only available to the Blizzard UI" popup after opening the
+  addon's settings and then another page, such as Social.
+
 ## 1.1.4
 
 ### Fixed

@@ -62,10 +62,21 @@ function Region:SetResizeBounds(...) self.bounds = { ... } end
 function Region:StartSizing(point) self.sizing = point end
 function Region:SetFrameLevel(l) self.level = l end
 function Region:GetFrameLevel() return self.level or 1 end
-function Region:Show() self.shown = true end
+-- Showing a hidden frame runs its OnShow, as in the client. SetShown does not go through Show.
+local function setShown(self, v)
+    local was = self.shown
+    self.shown = not not v
+    if self.shown and not was and self.scripts.OnShow then self.scripts.OnShow(self) end
+end
+function Region:Show() setShown(self, true) end
 function Region:Hide() self.shown = false end
 function Region:IsShown() return self.shown end
-function Region:SetShown(v) self.shown = not not v end
+function Region:SetShown(v) setShown(self, v) end
+function Region:SetScrollChild(child) self.scrollChild = child end
+function Region:EnableMouseWheel(v) self.mouseWheel = v end
+function Region:GetVerticalScroll() return self.vscroll or 0 end
+function Region:SetVerticalScroll(v) self.vscroll = v end
+function Region:GetVerticalScrollRange() return 0 end
 function Region:SetAlpha(a) self.alpha = a end
 function Region:SetScale(s) self.scale = s end
 function Region:SetFrameStrata() end
@@ -155,10 +166,44 @@ end
 UIParent = NewRegion("Frame", nil, "BACKGROUND", 0)
 UIParent.w, UIParent.h = 1920, 1080
 
-function CreateFrame(_, name, parent)
+-- The settings row templates (Blizzard_SettingControls.xml). Their Init reads the row's initializer
+-- back through GetElementData, which the game's list (or a canvas of ours) puts on the frame, and
+-- registers callbacks that Release drops, so a row is not initialised twice without a Release.
+local ROW_TEMPLATES = {
+    SettingsCheckboxControlTemplate = true, SettingsSliderControlTemplate = true,
+    SettingsDropdownControlTemplate = true, SettingButtonControlTemplate = true,
+    SettingsListSectionHeaderTemplate = true,
+}
+local TEMPLATES = { MinimalScrollBar = true }
+local RowTemplate = {}
+function RowTemplate.Init(self, initializer)
+    assert(self.GetElementData and self:GetElementData() == initializer, "row Init without its GetElementData")
+    assert(not self.initialized, "row initialised again without Release")
+    self.initialized, self.initializer = true, initializer
+    local setting = initializer.data.setting
+    self.value = setting and setting:GetValue()
+end
+function RowTemplate.Release(self) self.initialized = false end
+
+local function insideOpenSettings(f)
+    while f do
+        if f == __settingsPanel then return __settingsPanel.shown end
+        f = f.parent
+    end
+end
+
+function CreateFrame(_, name, parent, template)
+    assert(template == nil or ROW_TEMPLATES[template] or TEMPLATES[template], "unknown template " .. tostring(template))
     local f = NewRegion("Frame", parent, "BACKGROUND", 0)
     __frames[#__frames + 1] = f
     if name then _G[name] = f end
+    if ROW_TEMPLATES[template] then
+        f.rowTemplate, f.Init, f.Release = template, RowTemplate.Init, RowTemplate.Release
+    end
+    -- With the gamepad UI on, Forever's SmartNavigation hooks CreateFrame and, for a frame made
+    -- inside the open settings panel, rebuilds the panel's navigation state from the caller's code,
+    -- which then gets the panel's protected close blocked.
+    if insideOpenSettings(parent) then __builtInOpenPanel = true end
     return f
 end
 
@@ -291,9 +336,14 @@ GameTooltip.shown = false
 function GameTooltip:SetOwner(owner) self.owner, self.lines = owner, {} end
 function GameTooltip:AddLine(text) self.lines[#self.lines + 1] = text end
 
--- Native Settings API (11.x signatures, as used by the TBC Anniversary client).
-__settings, __settingsLayout = {}, {}
+-- Native Settings API, with the signatures of the forever branch of the game's UI source
+-- (Blizzard_Settings.lua, Blizzard_SettingControls.lua), which Era and Anniversary share.
+__settings = {}
 Settings = {}
+-- The settings panel, and the frame inside it that a canvas category's page is shown in.
+__settingsPanel = NewRegion("Frame", UIParent)
+__settingsPanel.shown = false
+__settingsCanvas = NewRegion("Frame", __settingsPanel)
 local Setting = {}
 Setting.__index = Setting
 function Setting:SetValueChangedCallback(fn) self.cb = fn end
@@ -304,12 +354,39 @@ function Setting:SetValue(v)
     self.tbl[self.key] = v
     if self.cb then self.cb(self, v) end
 end
-local function addInit(i) __settingsLayout[#__settingsLayout + 1] = i end
 
+-- Initializers (ScrollBoxFactoryInitializerMixin): a row template and its data.
+local Initializer = {}
+Initializer.__index = Initializer
+function Initializer:GetTemplate() return self.template end
+function Initializer:InitFrame(frame) if frame.Init then frame:Init(self) end end
+function Initializer:Resetter(frame) if frame.Release then frame:Release(self) end end
+local function NewInitializer(template, kind, data)
+    return setmetatable({ template = template, kind = kind, data = data }, Initializer)
+end
+local function SettingData(setting, options, tooltip)
+    return { setting = setting, name = setting.name, options = options or {}, tooltip = tooltip }
+end
+
+-- A vertical layout list: the game draws its rows on row frames it reuses for every category. On
+-- Forever rows our code set up carried our taint into the Social page, whose protected
+-- IsUserOAuthed was then blocked in our name, so anything added to one is flagged.
+local function AddToSharedList() __sharedListTainted = true end
 function Settings.RegisterVerticalLayoutCategory(name)
     local cat = { name = name }
     function cat:GetID() return self.name end
-    return cat, { AddInitializer = function(_, i) addInit(i) end }
+    return cat, { AddInitializer = AddToSharedList }
+end
+function Settings.RegisterInitializer() AddToSharedList() end
+function Settings.CreateCheckbox() AddToSharedList() end
+function Settings.CreateSlider() AddToSharedList() end
+function Settings.CreateDropdown() AddToSharedList() end
+
+function Settings.RegisterCanvasLayoutCategory(frame, name)
+    assert(type(frame) == "table" and frame.kind == "Frame" and type(name) == "string", "bad RegisterCanvasLayoutCategory args")
+    local cat = { name = name, frame = frame }
+    function cat:GetID() return self.name end
+    return cat
 end
 function Settings.RegisterAddOnSetting(cat, variable, key, tbl, vtype, name, default)
     assert(type(cat) == "table" and type(variable) == "string" and type(key) == "string"
@@ -321,25 +398,24 @@ function Settings.RegisterAddOnSetting(cat, variable, key, tbl, vtype, name, def
     __settings[key] = s
     return s
 end
-function Settings.CreateCheckbox(_, s)
+function Settings.CreateCheckboxInitializer(s, options, tooltip)
     assert(s.vtype == "boolean", "checkbox on non-boolean " .. s.key)
-    addInit({ kind = "checkbox", key = s.key })
+    return NewInitializer("SettingsCheckboxControlTemplate", "checkbox", SettingData(s, options, tooltip))
 end
 function Settings.CreateSliderOptions(lo, hi, step)
     local o = { min = lo, max = hi, step = step }
     function o:SetLabelFormatter(_, f) self.fmt = f end
     return o
 end
-function Settings.CreateSlider(_, s, o)
-    assert(s.vtype == "number", "slider on non-number " .. s.key)
+function Settings.CreateSliderInitializer(s, o, tooltip)
+    assert(s.vtype == "number" and o ~= nil, "slider on non-number or without options " .. s.key)
     assert(type(o.fmt(s:GetValue())) == "string", "slider formatter for " .. s.key)
-    addInit({ kind = "slider", key = s.key })
+    return NewInitializer("SettingsSliderControlTemplate", "slider", SettingData(s, o, tooltip))
 end
--- The client calls getOptions again each time the menu opens; getOptions is kept for tests to do so.
-function Settings.CreateDropdown(_, s, getOptions)
-    local opts = getOptions()
-    assert(#opts > 0, "empty dropdown " .. s.key)
-    addInit({ kind = "dropdown", key = s.key, options = opts, getOptions = getOptions })
+-- The game calls getOptions each time the menu opens; tests call it the same way.
+function Settings.CreateDropdownInitializer(s, getOptions, tooltip)
+    assert(type(getOptions) == "function" and #getOptions() > 0, "dropdown without options " .. s.key)
+    return NewInitializer("SettingsDropdownControlTemplate", "dropdown", SettingData(s, getOptions, tooltip))
 end
 -- Add returns the option table, which the menu passes to the option's onEnter on hover.
 function Settings.CreateControlTextContainer()
@@ -360,12 +436,47 @@ function menuManager:IsAnyMenuOpen()
 end
 Menu = { GetManager = function() return menuManager end }
 function Settings.RegisterAddOnCategory(cat) __settingsCategory = cat end
-function Settings.OpenToCategory(id) __openedCategory = id end
-MinimalSliderWithSteppersMixin = { Label = { Right = 1 } }
-function CreateSettingsButtonInitializer(name, text, onClick)
-    return { kind = "button", name = name, onClick = onClick }
+-- Opening a canvas category puts its page in the panel and shows it (SettingsPanelMixin:DisplayLayout).
+function Settings.OpenToCategory(id)
+    __openedCategory = id
+    local cat = __settingsCategory
+    if cat and cat:GetID() == id and cat.frame then
+        __settingsPanel:Show()
+        cat.frame.parent = __settingsCanvas
+        cat.frame:Show()
+    end
 end
-function CreateSettingsListSectionHeaderInitializer(text) return { kind = "header", text = text } end
+-- Closing the panel hides the page, so the next open shows it afresh.
+function __closeSettings()
+    __settingsPanel.shown = false
+    if __settingsCategory and __settingsCategory.frame then __settingsCategory.frame:Hide() end
+end
+MinimalSliderWithSteppersMixin = { Label = { Right = 1 } }
+function CreateSettingsButtonInitializer(name, buttonText, buttonClick, tooltip, addSearchTags)
+    assert(addSearchTags ~= nil, "CreateSettingsButtonInitializer needs addSearchTags")
+    local data = { name = name, buttonText = buttonText, buttonClick = buttonClick, tooltip = tooltip }
+    return NewInitializer("SettingButtonControlTemplate", "button", data)
+end
+function CreateSettingsListSectionHeaderInitializer(name, tooltip)
+    return NewInitializer("SettingsListSectionHeaderTemplate", "header", { name = name, tooltip = tooltip })
+end
+
+-- The settings rows as drawn, in page order: each row frame and what its initializer holds.
+function __settingsRows()
+    local out = {}
+    for _, r in ipairs(__regions) do
+        local init = r.initializer
+        if r.rowTemplate and init then
+            local d = init.data
+            local getOptions = type(d.options) == "function" and d.options or nil
+            out[#out + 1] = {
+                kind = init.kind, key = d.setting and d.setting.key, name = d.name, frame = r,
+                onClick = d.buttonClick, getOptions = getOptions, options = getOptions and getOptions(),
+            }
+        end
+    end
+    return out
+end
 
 __markCFunctions()
 

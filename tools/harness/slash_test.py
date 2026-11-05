@@ -32,7 +32,10 @@ lua.execute("__fire('ADDON_LOADED', 'SmoothExperienceBar'); __fire('PLAYER_ENTER
 state = lua.eval("""function()
     local t = {}
     for _, r in ipairs(__regions) do
-        if r.kind == "FontString" and r.text and r.text ~= "" and r.shown then t[#t + 1] = r.text end
+        if r.kind == "FontString" and r.parent == SmoothExperienceBarFrame and r.text and r.text ~= ""
+            and r.shown then
+            t[#t + 1] = r.text
+        end
     end
     return (SmoothExperienceBarFrame.shown and "" or "[hidden] ") .. table.concat(t, " | ")
 end""")
@@ -68,18 +71,44 @@ check(bool(G.ChatFrame1.events.TIME_PLAYED_MSG), "chat frames get TIME_PLAYED_MS
 check("Time this level: 4m" in state(), "played time shown")
 
 print("== settings page")
-layout = G.__settingsLayout
+layout = G.__settingsRows()
 items = [layout[i + 1] for i in range(len(layout))]
 for item in items:
-    print(f"  {item.kind:9} {item.key or item.name or item.text}")
-check(G.__settingsCategory.name == "Smooth Experience Bar", "category registered")
+    print(f"  {item.kind:9} {item.key or item.name}")
+category = G.__settingsCategory
+check(category.name == "Smooth Experience Bar" and category.frame is not None, "canvas category registered")
 check(any(i.kind == "dropdown" and i.key == "theme" for i in items), "theme dropdown")
 check(sum(1 for i in items if i.kind == "button") == 7, "seven buttons")
+setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n = n + 1 end return n end")()
+check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 24,
+      "a row for every setting")
+inside = lua.eval("""function(page)
+    for _, row in ipairs(__settingsRows()) do
+        local f = row.frame
+        while f and f ~= page do f = f.parent end
+        if not f then return false end
+    end
+    return true
+end""")
+check(inside(category.frame), "every row is a frame inside our page")
+check(not G.__sharedListTainted, "nothing added to the game's shared settings list (Forever: Social blocked in our name)")
+check(not category.frame.shown, "page built hidden")
 
 print("== slash commands")
 lua.execute("__openedCategory = nil")
 slash("")
 check(G.__openedCategory == "Smooth Experience Bar", "/seb opens settings")
+check(lua.eval("__settingsCategory.frame.shown and __settingsCategory.frame.parent == __settingsCanvas"),
+      "page shown in the settings panel")
+check(not G.__builtInOpenPanel, "no frame made inside the open settings panel")
+lua.execute("__closeSettings()")
+slash("unlock", 0.1)
+lua.execute("__openedCategory = nil")
+slash("", 0.1)
+locked_row = next(i for i in G.__settingsRows().values() if i.key == "locked")
+check(locked_row.frame.value is False, "rows read their settings again when the page opens")
+lua.execute("__closeSettings()")
+slash("lock", 0.1)
 slash("help")
 check("Level 57 | 229,850" in slash("test"), "test: 8% gain")
 check("249,850" in slash("test 20000"), "test 20000")
@@ -342,11 +371,11 @@ check(mine is not None and mine.theme == "fel" and mine.width == 820 and mine.gl
       "old account-wide settings carried into this character's profile")
 check(lua2.eval("SmoothExperienceBarDB.theme") is None and lua2.eval("SmoothExperienceBarDB.legacy.theme") == "fel",
       "old settings moved out of the top level and kept for other characters")
-copy_dd = [i for i in lua2.eval("__settingsLayout").values() if i.kind == "dropdown" and i.key == "copyFrom"]
+copy_dd = [i for i in lua2.eval("__settingsRows()").values() if i.kind == "dropdown" and i.key == "copyFrom"]
 check(copy_dd and copy_dd[0].options[1].label == "No other characters yet", "copy list says when there is no one to copy")
 lua2.execute("SmoothExperienceBarDB.profiles['Alt - Mockrealm'] = { theme = 'frost', width = 640, glass = false, lightning = false }")
 lua2.execute("__settings.copyFrom:SetValue('Alt - Mockrealm')")
-button = [i for i in lua2.eval("__settingsLayout").values() if i.kind == "button" and i.name == "Copy Settings"]
+button = [i for i in lua2.eval("__settingsRows()").values() if i.kind == "button" and i.name == "Copy Settings"]
 check(bool(button), "copy button on the settings page")
 button[0].onClick()
 for _ in range(30):
