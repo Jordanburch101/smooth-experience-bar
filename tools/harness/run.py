@@ -42,7 +42,7 @@ lua = LuaRuntime(unpack_returned_tuples=True)
 lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
 G = lua.globals()
 # A character that has done the setup, so the wizard does not open and play XP gains.
-lua.execute("SmoothExperienceBarDB = { profiles = { ['Testchar - Mockrealm'] = {} } }")
+lua.execute("SmoothExperienceBarDB = { setupOffered = true, profiles = { ['Testchar - Mockrealm'] = {} } }")
 ns = G.__loadAddon(ADDON.replace("\\", "/"), "SmoothExperienceBar")
 
 _media = {}

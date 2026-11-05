@@ -1,0 +1,56 @@
+# On every push to main: rebuild the gallery (branding/gallery: the listing screenshots, hero.gif
+# and default-bar.gif) from the addon's code and commit the images when they changed, so they always
+# show the bar as it is. A push made with the workflow's own token starts no workflows, so the
+# commit does not run this again.
+name: Gallery
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only the newest push matters: a newer run replaces an older one.
+concurrency:
+  group: gallery
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  gallery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The versions the images are made with locally, so a rebuild there and here match.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install lupa, numpy and Pillow
+        run: pip install lupa==2.8 numpy==2.5.4 pillow==13.0.0
+
+      # The text is in the game's font, fetched from the game's files on wago.tools (file 615960,
+      # Fonts\FRIZQT__.TTF) rather than kept in the repo, and checked against the known file.
+      - name: Game font
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/frizqt__.ttf" https://wago.tools/api/casc/615960
+          echo "43bf7b77e7c3535f176f5f97618ae78a8128fc25  $RUNNER_TEMP/frizqt__.ttf" | sha1sum -c -
+          echo "SEB_FONT=$RUNNER_TEMP/frizqt__.ttf" >> "$GITHUB_ENV"
+
+      - name: Render
+        run: python tools/harness/gallery.py SmoothExperienceBar branding/gallery branding/gallery-backdrop.jpg
+
+      - name: Commit changed images
+        run: |
+          git add branding/gallery
+          if git diff --cached --quiet; then
+            echo "Gallery unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update the gallery images"
+          git pull --rebase origin main
+          git push origin HEAD:main

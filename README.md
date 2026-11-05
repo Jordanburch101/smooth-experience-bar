@@ -35,12 +35,17 @@ Works on **WoW Classic Era**, **TBC Anniversary** and **WoW Forever**.
 Open the settings with `/seb`, by right-clicking the bar, or from Options > AddOns > Smooth Experience Bar.
 
 - Unlock to drag the bar anywhere and resize it from the corner, or set width, height and scale exactly.
+- Show the liquid inside the game's own experience bar, instead of the separate bar or as well as it.
+  Hover it for the rest of the numbers.
 - Toggle each line of text, or hide the default experience bar.
+- A setup wizard with live previews walks through all of this the first time (`/seb setup` to open it again).
 - Change the fill speed, or switch the liquid waves, swirl, bubbles, sparkles, ambient particles, lightning
   and level-up flash on and off.
 - Turn on Glass for a glass tube that reflects the liquid, and Rounded Liquid for rounded ends.
 - Settings are saved per character; copy another character's from the Profile section.
 - Preview XP gains, quest turn-ins and level-ups without touching your real XP.
+
+![The liquid filling the game's own experience bar between the action bars, through kills, a quest turn-in and a level-up](branding/gallery/default-bar.gif)
 
 ![Fire, Frost, Honey, Lava, Cosmic, Nature and Void effect themes, each with its own particles](branding/gallery/effects.png)
 
@@ -62,6 +67,8 @@ The default theme matches the original WeakAura. 24 more are optional:
 | `/seb reset` | Reset position and size |
 | `/seb session` | Reset session time and XP/hour |
 | `/seb test` | Preview an XP gain (also `level`, `multi`, `quest`, `turnin`, `rested`, `off`) |
+| `/seb skin` | Show the liquid in the game's own experience bar, or stop |
+| `/seb setup` | Open the setup wizard |
 
 ## Credits
 
@@ -123,4 +130,6 @@ Themes.Register("toxic", {
    `gh workflow run curseforge-check.yml -f tag=vX.Y.Z` to upload that release again.
 
 CI (`.github/workflows/ci.yml`) runs the tests and a release build on every push to `main` and on pull
-requests; the build is attached to the run as a download.
+requests; the build is attached to the run as a download. The Gallery workflow
+(`.github/workflows/gallery.yml`) rebuilds `branding/gallery/` on every push to `main` and commits the images
+that changed.

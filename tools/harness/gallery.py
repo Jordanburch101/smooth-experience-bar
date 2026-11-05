@@ -1,11 +1,13 @@
 """Render listing screenshots (CurseForge gallery) of the bar over an in-game backdrop.
 
 Usage: python gallery.py <addon dir> <out dir> <backdrop image>
-Writes hero.png, turn-in.png, level-up.png, themes.png, effects.png (1600x900) and hero.gif.
+Writes hero.png, turn-in.png, level-up.png, themes.png, effects.png (1600x900), hero.gif, and
+default-bar.gif over default-bar-backdrop.png from the backdrop's folder.
 """
 import os
 import sys
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,6 +25,26 @@ SEED_BEFORE = "__played.level = 7980; __played.total = 1234567"
 SEED_AFTER = "SmoothExperienceBarCharDB.startTime = time() - 5400; SmoothExperienceBarCharDB.gainedXP = 146000"
 
 _source = Image.open(BACKDROP).convert("RGB")
+
+# Use Default Experience Bar, over an in-game screenshot of Forever's action bars: where the game's
+# experience bar is in it (screen px), the UI scale it was taken at, and the game's segment lines
+# over the bar (start + step * i), with a clean one to copy to each, as the game draws them over the
+# liquid and under the text.
+DEFAULT_BAR_BACKDROP = os.path.join(os.path.dirname(os.path.abspath(BACKDROP)), "default-bar-backdrop.png")
+DEFAULT_BAR = {"left": 186, "top": 49, "width": 1420, "height": 13, "ui_scale": 1.15,
+               "line_start": 183.6, "line_step": 71.47, "lines": 19, "line_sample": 469}
+# A stand-in for the game's experience bar, as in the tests, for the default bar to find.
+FAKE_XP_BAR = """
+    MainMenuExpBar = nil
+    StatusTrackingBarManager = CreateFrame('Frame', nil, UIParent)
+    local container = CreateFrame('Frame', nil, StatusTrackingBarManager)
+    StatusTrackingBarManager.barContainers = { container }
+    local xp = CreateFrame('Frame', nil, container)
+    xp.StatusBar = CreateFrame('Frame', nil, xp)
+    xp.StatusBar:SetSize(%r, %r)
+    xp.ExhaustionTick = CreateFrame('Frame', nil, xp)
+    container.bars = { [4] = xp }
+"""
 
 
 def session(settings=None):
@@ -57,8 +79,48 @@ def save(img, name):
     print("wrote", path, img.size)
 
 
+def default_bar_gif(name, start=0.8, end=9.6, fps=20):
+    """The liquid inside the game's experience bar, playing kills, a turn-in and a level-up."""
+    b = DEFAULT_BAR
+    shot = Image.open(DEFAULT_BAR_BACKDROP).convert("RGB")
+    line = np.asarray(shot)[b["top"]:b["top"] + b["height"], b["line_sample"]].copy()
+    lines = [round(b["line_start"] + b["line_step"] * i) for i in range(1, b["lines"] + 1)]
+    # The screenshot's own bar emptied, so the rounded ends show dark.
+    base = shot.copy()
+    ImageDraw.Draw(base).rectangle([b["left"], b["top"], b["left"] + b["width"] - 1, b["top"] + b["height"] - 1],
+                                   fill=(10, 8, 7))
+    k = b["ui_scale"]
+    s = Session(ADDON, {"showBar": False, "skinDefaultBar": True},
+                before_login=SEED_BEFORE + FAKE_XP_BAR % (b["width"] / k, b["height"] / k),
+                after_login=SEED_AFTER, frame="SmoothExperienceBarDefaultFrame")
+
+    def segment_lines(img):
+        px = np.asarray(img).copy()
+        for x in lines:
+            px[b["top"]:b["top"] + b["height"], x] = line
+        return Image.fromarray(px)
+
+    frames = []
+    s.run_until(start)
+    while s.t < end:
+        s.run_until(s.t + 1 / fps)
+        frames.append(s.render(base, b["left"], b["top"], k, under_text=segment_lines))
+    # One palette for every frame and no dithering: the art stays still, so only the bar changes
+    # between frames and the file stays small.
+    sample = Image.new("RGB", (base.width, base.height * 6))
+    for i, f in enumerate(np.linspace(0, len(frames) - 1, 6).astype(int)):
+        sample.paste(frames[f], (0, i * base.height))
+    palette = sample.quantize(colors=255, method=Image.MEDIANCUT)
+    frames = [f.quantize(palette=palette, dither=Image.Dither.NONE) for f in frames]
+    path = os.path.join(OUT, name)
+    frames[0].save(path, save_all=True, append_images=frames[1:], duration=int(1000 / fps), loop=0, optimize=True)
+    print("wrote", path, f"{len(frames)} frames, {os.path.getsize(path) // 1024} KB")
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
+
+    default_bar_gif("default-bar.gif")
 
     # One bar, mid quest turn-in: motes streaming and the liquid surging.
     save(snapshot(4.2), "hero.png")

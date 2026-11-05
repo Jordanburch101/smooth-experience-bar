@@ -84,15 +84,18 @@ def mask_alpha(img, wrap, x0, y0, pw, ph, mx0, my0, mw, mh):
 class Session:
     """One addon instance in the mock, logged in and ready to play the scenario."""
 
-    def __init__(self, addon_dir, settings=None, scenario=SCENARIO, before_login="", after_login=""):
-        """before_login / after_login: Lua run around PLAYER_ENTERING_WORLD, e.g. to seed session stats."""
+    def __init__(self, addon_dir, settings=None, scenario=SCENARIO, before_login="", after_login="",
+                 frame="SmoothExperienceBarFrame"):
+        """before_login / after_login: Lua run around PLAYER_ENTERING_WORLD, e.g. to seed session stats.
+        frame: the bar to draw, e.g. SmoothExperienceBarDefaultFrame for the one over the game's bar."""
         self.addon_dir = addon_dir
+        self.frame = frame
         self.lua = LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
         self.G = self.lua.globals()
         # Item access: inside a class, attribute names starting with __ get mangled.
         # A character that has done the setup, so the wizard does not open and play XP gains.
-        self.lua.execute("SmoothExperienceBarDB = { profiles = { ['Testchar - Mockrealm'] = {} } }")
+        self.lua.execute("SmoothExperienceBarDB = { setupOffered = true, profiles = { ['Testchar - Mockrealm'] = {} } }")
         self.G["__loadAddon"](addon_dir.replace("\\", "/"), "SmoothExperienceBar")
         self._step = self.G["__step"]
         apply = "".join(f"__settings[{k!r}]:SetValue({lua_value(v)}); " for k, v in (settings or {}).items())
@@ -101,17 +104,20 @@ class Session:
         self.pending = sorted(scenario, key=lambda e: e[0])
         self.t = 0.0
         self._media = {}
-        self._visible = self.lua.eval("""function()
-            local out = {}
+        # The frame's regions, and its text on a child frame (the bar over the game's has its text on
+        # one, raised above the game's art).
+        self._visible = self.lua.eval("""function(name)
+            local out, f = {}, _G[name]
             for _, r in ipairs(__regions) do
-                if r.parent == SmoothExperienceBarFrame and r.shown and r.alpha > 0.001 then out[#out + 1] = r end
+                local mine = r.parent == f or (r.kind == "FontString" and r.parent and r.parent.parent == f)
+                if mine and r.shown and r.alpha > 0.001 then out[#out + 1] = r end
             end
             return out
         end""")
 
     @property
     def bar_size(self):
-        bar = self.G.SmoothExperienceBarFrame
+        bar = self.G[self.frame]
         return bar.w, bar.h
 
     def run_until(self, t):
@@ -131,7 +137,7 @@ class Session:
         return self._media[name]
 
     def regions(self):
-        v = self._visible()
+        v = self._visible(self.frame)
         regions = [v[i + 1] for i in range(len(v))]
         regions.sort(key=lambda r: (LAYERS.get(r.layer, 2), r.sub, r.order))
         return regions
@@ -227,8 +233,10 @@ class Session:
                       stroke_width=stroke, stroke_fill=(0, 0, 0, 255))
             x += f.getlength(s)
 
-    def render(self, background, ox, oy, k, ss=2):
-        """Draw the bar onto a copy of background (PIL RGB) with its top-left at (ox, oy), k px per unit."""
+    def render(self, background, ox, oy, k, ss=2, under_text=None):
+        """Draw the bar onto a copy of background (PIL RGB) with its top-left at (ox, oy), k px per unit.
+        under_text, if given, takes the image with the bar's textures drawn and returns it with whatever
+        goes between them and the text (the game's own art over the bar, say)."""
         big = background.convert("RGB").resize((background.width * ss, background.height * ss), Image.BICUBIC)
         canvas = np.asarray(big).astype(np.float32) / 255
         texts = []
@@ -238,7 +246,10 @@ class Session:
             elif r.kind == "FontString" and r.text:
                 texts.append(r)
         img = Image.fromarray((np.clip(canvas, 0, 1) * 255).astype(np.uint8))
-        img = img.resize(background.size, Image.LANCZOS).convert("RGBA")
+        img = img.resize(background.size, Image.LANCZOS)
+        if under_text:
+            img = under_text(img)
+        img = img.convert("RGBA")
         layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(layer)
         for r in texts:
