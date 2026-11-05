@@ -262,8 +262,9 @@ function CreateColor(r, g, b, a) return setmetatable({ r = r, g = g, b = b, a = 
 
 __player.class, __player.faction = "PALADIN", "Alliance"
 __player.name, __player.realm = "Testchar", "Mockrealm"
--- Like the client, UnitName gives no realm for your own character; GetRealmName has it.
-function UnitName(unit) if unit == "player" then return __player.name, nil end end
+-- Like the client, UnitName gives no realm for your own character; GetRealmName has it. On Forever
+-- the second value is the character's surname: set __player.surname for that.
+function UnitName(unit) if unit == "player" then return __player.name, __player.surname end end
 function GetRealmName() return __player.realm end
 function UnitClass() return "Paladin", __player.class end
 function UnitFactionGroup() return __player.faction end

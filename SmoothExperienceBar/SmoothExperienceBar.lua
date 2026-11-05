@@ -30,7 +30,7 @@ local ANIM = {
 local SESSION_MAX_AGE = 86400 * 3
 
 -- Saved per character, as that character's profile in SmoothExperienceBarDB.profiles (keyed
--- "Name - Realm"), so any character can copy another's. Everything except point/layout is on the
+-- "Name - Realm", or "First Last - Ruleset" on Forever), so any character can copy another's. Everything except point/layout is on the
 -- settings page.
 local DEFAULTS = {
     point = { "TOP", "UIParent", "TOP", 0, -40 },
@@ -1295,8 +1295,35 @@ function Core.ResetPosition()
     ApplyPosition()
 end
 
--- Profiles: every character's settings, keyed "Name - Realm".
-local profiles, profileKey
+-- Profiles: every character's settings, keyed "Name - Realm", or "First Last - Ruleset" on Forever.
+-- oldKeys holds Forever's keys from before surnames, which are kept but not listed.
+local profiles, profileKey, oldKeys
+
+-- Forever has no realms: names are unique across the region, and a character plays under a
+-- ruleset. GetRealmName there gives a server name, so the ruleset names the character instead.
+local function RulesetName()
+    local active, rules = C_GameRules and C_GameRules.IsGameRuleActive, Enum and Enum.GameRule
+    if not (active and rules) then return end
+    local function on(rule) return rule ~= nil and active(rule) end
+    if on(rules.HardcoreRuleset) then return "Hardcore" end
+    local rp, pvp = on(rules.RPRuleset), on(rules.PvPRuleset)
+    if rp and pvp then return "RP-PVP" end
+    if rp then return "RP" end
+    if pvp then return "PVP" end
+    return "Normal"
+end
+
+-- This character's key, and its key from before surnames when it has one (Forever).
+local function CharacterKeys()
+    local name, surname = UnitName("player")
+    name = name or "Unknown"
+    local realm = GetRealmName() or "Unknown"
+    local realmKey = name .. " - " .. realm
+    if type(surname) ~= "string" or surname == "" then return realmKey end
+    local consts = Constants and Constants.CharacterNameSeparatorConsts
+    local sep = consts and consts.CHARACTERNAME_SURNAME_SEPARATOR or " "
+    return name .. sep .. surname .. " - " .. (RulesetName() or realm), realmKey
+end
 
 function Core.ProfileKey()
     return profileKey
@@ -1306,7 +1333,7 @@ end
 function Core.OtherProfiles()
     local keys = {}
     for key in pairs(profiles or {}) do
-        if key ~= profileKey then keys[#keys + 1] = key end
+        if key ~= profileKey and not (oldKeys and oldKeys[key]) then keys[#keys + 1] = key end
     end
     table.sort(keys)
     return keys
@@ -1459,8 +1486,25 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
             SmoothExperienceBarDB = root
         end
         profiles = root.profiles
-        profileKey = (UnitName("player") or "Unknown") .. " - " .. (GetRealmName() or "Unknown")
+        local oldKey
+        profileKey, oldKey = CharacterKeys()
         local newToAddon = not next(profiles) and not root.legacy
+        -- Forever: profiles were keyed by first name and server before surnames. Note those keys once,
+        -- to leave them off the copy list, and start each character from its old profile. They are
+        -- kept, as two characters with the same first name shared one.
+        if oldKey then
+            if not root.oldKeys then
+                root.oldKeys = {}
+                for key in pairs(profiles) do root.oldKeys[key] = true end
+            end
+            oldKeys = root.oldKeys
+            local old = profiles[oldKey]
+            if not profiles[profileKey] and old then
+                local profile = {}
+                for k, v in pairs(old) do profile[k] = CopyValue(v) end
+                profiles[profileKey] = profile
+            end
+        end
         if not profiles[profileKey] then
             local profile = {}
             for k, v in pairs(root.legacy or {}) do profile[k] = CopyValue(v) end

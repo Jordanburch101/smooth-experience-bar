@@ -192,8 +192,9 @@ function Options.Register(savedDB, defaultValues)
         "Shade the top and bottom of the separate bar so the liquid looks round. The default experience bar's liquid is always round.")
 
     -- Settings are saved per character. Pick another character, then copy their settings onto this one.
+    -- The first character starts out chosen: with no value in the list the game shows "Custom".
     Header("Profile")
-    local copy = { copyFrom = "" }
+    local copy = { copyFrom = Core.OtherProfiles()[1] or "" }
     local copySetting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_copyFrom", "copyFrom", copy, "string",
         "Copy Settings From", "")
     Dropdown(copySetting, "Settings are saved per character (this is " .. Core.ProfileKey() .. "). Pick another character here, then press Copy.",

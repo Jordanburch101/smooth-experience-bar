@@ -6,6 +6,15 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.2.1
+
+### Fixed
+- WoW Forever: Copy Settings From now lists characters by first and last
+  name and ruleset (Normal, PVP, RP, RP-PVP or Hardcore), such as
+  "Hollywood Hootsman - Normal", instead of a cut-off server name.
+  Characters that share a first name now get their own settings, each
+  starting from the settings they had before.
+
 ## 1.2.0
 
 ### New

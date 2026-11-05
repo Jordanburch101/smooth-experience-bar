@@ -634,6 +634,58 @@ check(lua3.eval("SmoothExperienceBarSetup") is None
       "the wizard is offered once per account: not again on another character")
 check(any("Copied settings from Alt - Mockrealm" in m for m in G2.__chat.values()), "copy confirmed in chat")
 
+# Forever: characters have a surname and play under a ruleset, not a realm. Profiles saved before
+# surnames were keyed by first name and server name.
+def forever_session(rules, setup=""):
+    lua = LuaRuntime(unpack_returned_tuples=True)
+    lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
+    lua.execute("""
+        __player.name, __player.surname, __player.realm = 'Hotdog', 'Hootsman', 'CAMWOW AU1 Realm 1 PvE'
+        Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = ' ' } }
+        Enum = { GameRule = { PvPRuleset = 1, RPRuleset = 2, HardcoreRuleset = 3 } }
+        __rules = {}
+        C_GameRules = { IsGameRuleActive = function(rule) return __rules[rule] == true end }
+        SmoothExperienceBarDB = { setupOffered = true, profiles = {
+            ['Hotdog - CAMWOW AU1 Realm 1 PvE'] = { theme = 'fel', width = 900 },
+            ['Hollywood - CAMWOW AU1 Realm 1 PvE'] = { theme = 'frost' },
+        } }
+    """)
+    for rule in rules:
+        lua.execute(f"__rules[Enum.GameRule.{rule}] = true")
+    lua.execute(setup)
+    lua.globals().__loadAddon(ADDON.replace("\\", "/"), "SmoothExperienceBar")
+    lua.execute("__fire('ADDON_LOADED', 'SmoothExperienceBar'); __fire('PLAYER_ENTERING_WORLD', true, false)")
+    return lua
+
+lua4 = forever_session([])
+forever_profiles = lua4.eval("SmoothExperienceBarDB.profiles")
+mine4 = forever_profiles["Hotdog Hootsman - Normal"]
+check(mine4 is not None and mine4.theme == "fel" and mine4.width == 900,
+      "Forever: profile keyed by first and last name and ruleset, starting from the old first-name profile")
+check(forever_profiles["Hotdog - CAMWOW AU1 Realm 1 PvE"] is not None,
+      "Forever: old profile kept for another character with the same first name")
+copy_dd4 = [i for i in lua4.eval("__settingsRows()").values() if i.kind == "dropdown" and i.key == "copyFrom"]
+check(copy_dd4 and copy_dd4[0].options[1].label == "No other characters yet",
+      "Forever: old first-name profiles are left off the copy list")
+lua4.execute("SmoothExperienceBarDB.profiles['Hollywood Hootsman - Normal'] = { theme = 'frost' }")
+copy_dd4 = [i for i in lua4.eval("__settingsRows()").values() if i.kind == "dropdown" and i.key == "copyFrom"]
+labels4 = [o.label for o in copy_dd4[0].options.values()]
+check(labels4 == ["Hollywood Hootsman - Normal"], f"Forever: copy list names other characters in full, got {labels4}")
+check(lua4.eval("__settings.copyFrom:GetValue()") == "", "copy choice is empty when there is no one to copy")
+# A later login: Hollywood has logged in since the update, so the old keys are already noted.
+lua5 = forever_session([], """
+    local db = SmoothExperienceBarDB
+    db.oldKeys = { ['Hotdog - CAMWOW AU1 Realm 1 PvE'] = true, ['Hollywood - CAMWOW AU1 Realm 1 PvE'] = true }
+    db.profiles['Hollywood Hootsman - Normal'] = { theme = 'frost' }
+""")
+check(lua5.eval("__settings.copyFrom:GetValue()") == "Hollywood Hootsman - Normal",
+      "copy choice starts on the first other character, not a value outside the list")
+for rules, label in ((["PvPRuleset"], "PVP"), (["RPRuleset"], "RP"), (["RPRuleset", "PvPRuleset"], "RP-PVP"),
+                     (["HardcoreRuleset"], "Hardcore")):
+    key = "Hotdog Hootsman - " + label
+    check(forever_session(rules).eval(f"SmoothExperienceBarDB.profiles['{key}']") is not None,
+          f"Forever: {label} ruleset names the profile")
+
 if failures:
     print(f"\n{len(failures)} check(s) failed:")
     for f in failures:
