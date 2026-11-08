@@ -125,7 +125,18 @@ function Region:SetRotation(rad) self.rotation = rad end
 function Region:SetDrawLayer(layer, sub) self.layer, self.sub = layer, sub or 0 end
 function Region:SetSnapToPixelGrid() end
 function Region:SetTexelSnappingBias() end
-function Region:SetFont(_, size) self.fontSize = size end
+-- Like the client: a path, a size and valid flags, and false when the file cannot be loaded (the
+-- text then keeps the font it had). __fontFiles lists the files this client can load.
+local FONT_FLAGS = { [""] = true, OUTLINE = true, THICKOUTLINE = true, MONOCHROME = true,
+                     ["MONOCHROME, OUTLINE"] = true, ["MONOCHROME, THICKOUTLINE"] = true }
+function Region:SetFont(file, size, flags)
+    assert(self.kind == "FontString", "SetFont on a " .. self.kind)
+    assert(type(file) == "string" and type(size) == "number", "Usage: SetFont(file, size [, flags])")
+    assert(flags == nil or FONT_FLAGS[flags], "bad font flags " .. tostring(flags))
+    if not __fontFiles[file:upper()] then return false end
+    self.fontFile, self.fontSize, self.fontFlags = file, size, flags or ""
+    return true
+end
 function Region:SetShadowColor() end
 function Region:SetShadowOffset() end
 function Region:SetTextColor() end
@@ -380,7 +391,17 @@ end
 
 MainMenuExpBar = NewRegion("Frame", UIParent)
 
-GameFontNormal = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+-- Font objects the addon reads its fonts from, with the files Era and Anniversary give them.
+__fontFiles = {}
+local function FontObject(file, size, flags)
+    __fontFiles[file:upper()] = true
+    return { GetFont = function() return file, size, flags end }
+end
+GameFontNormal = FontObject("Fonts\\FRIZQT__.TTF", 12, "")
+NumberFontNormal = FontObject("Fonts\\ARIALN.TTF", 14, "OUTLINE")
+ChatFontNormal = FontObject("Fonts\\ARIALN.TTF", 14, "")
+QuestTitleFont = FontObject("Fonts\\MORPHEUS.TTF", 18, "")
+NumberFont_Outline_Huge = FontObject("Fonts\\SKURRI.TTF", 30, "THICKOUTLINE")
 
 __combat = false
 function InCombatLockdown() return __combat end

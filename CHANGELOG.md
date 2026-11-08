@@ -6,6 +6,16 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.3.0
+
+### New
+- Font: pick the font of the bar's text from the game's own fonts (Friz
+  Quadrata, Arial Narrow, Morpheus or Skurri, depending on the client).
+- Font Outline: untick it for text with a plain drop shadow instead of an
+  outline.
+- Segmented Bar: divide the separate bar into 20 segments, like the game's
+  experience bar.
+
 ## 1.2.1
 
 ### Fixed

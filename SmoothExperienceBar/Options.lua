@@ -83,6 +83,14 @@ local function ThemeOptions()
     return container:GetData()
 end
 
+local function FontOptions()
+    local container = Settings.CreateControlTextContainer()
+    for _, font in ipairs(ns.Core.Fonts()) do
+        container:Add(font.key, font.name)
+    end
+    return container:GetData()
+end
+
 -- The page frame: the title and divider the game's list draws above its rows, and a scroll frame
 -- for the rows where the list would be. The game parents and shows it when the category opens.
 local function BuildPage(title)
@@ -171,6 +179,8 @@ function Options.Register(savedDB, defaultValues)
         "Show the liquid inside the game's own experience bar too, in its place and at its size, with the time this level and your XP on it.")
 
     Header("Text")
+    Dropdown(Register("font", "Font"), "Font of the bar's text, from the game's own fonts.", FontOptions)
+    Checkbox("fontOutline", "Font Outline", "A dark outline around the text. Untick for a plain drop shadow.")
     Checkbox("showLevelTime", "Time This Level", "Played time at this level (total played at max level).")
     Checkbox("showSessionTime", "Session Time", "Time since you logged in.")
     Checkbox("showXPHour", "Leveling Time & XP/Hour", "Estimated time to level from this session's XP rate.")
@@ -190,6 +200,8 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("glass", "Glass", "Reflections along the bar, as if it were a glass tube.")
     Checkbox("rounding", "Rounded Liquid",
         "Shade the top and bottom of the separate bar so the liquid looks round. The default experience bar's liquid is always round.")
+    Checkbox("segments", "Segmented Bar",
+        "Divide the separate bar into 20 segments, like the game's experience bar. The default experience bar keeps its own.")
 
     -- Settings are saved per character. Pick another character, then copy their settings onto this one.
     -- The first character starts out chosen: with no value in the list the game shows "Custom".

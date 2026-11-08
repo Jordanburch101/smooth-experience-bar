@@ -14,6 +14,11 @@ local MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT = 200, 1600, 16, 60
 -- addon's own TGAs, and the font is taken from a game font object.
 local MEDIA = "Interface\\AddOns\\SmoothExperienceBar\\Media\\"
 local FONT = (GameFontNormal and GameFontNormal:GetFont()) or "Fonts\\FRIZQT__.TTF"
+-- The fonts on offer for the text, each from a game font object and saved by that object's name.
+-- Objects that share a file are offered once, under the file's name.
+local FONT_OBJECTS = { "GameFontNormal", "NumberFontNormal", "ChatFontNormal", "QuestTitleFont", "NumberFont_Outline_Huge" }
+local FONT_NAMES = { FRIZQT__ = "Friz Quadrata", ARIALN = "Arial Narrow", MORPHEUS = "Morpheus", SKURRI = "Skurri" }
+local SEGMENTS = 20 -- Segmented Bar: as many as the game's experience bar has
 local LAYOUT_VERSION = 2 -- bump to reset saved positions when the layout changes
 
 local ANIM = {
@@ -49,6 +54,8 @@ local DEFAULTS = {
     showXPHour = true,
     showQuestRested = true,
     resetOnReload = false,
+    font = "GameFontNormal", -- a name from FONT_OBJECTS
+    fontOutline = true,
 
     speed = 1,
     waves = true,
@@ -60,6 +67,7 @@ local DEFAULTS = {
     restedGlow = false,
     glass = false,
     rounding = false,
+    segments = false, -- lines dividing the separate bar
     flash = true,
 }
 
@@ -172,6 +180,18 @@ local function NewView(frame, width, height, skinned)
         v.roundR:SetPoint("BOTTOMRIGHT")
     end
 
+    -- Segmented Bar: lines over the liquid and under the glass, on the separate bar only; the game's
+    -- own bar has its lines already.
+    if not skinned then
+        v.segments = {}
+        for i = 1, SEGMENTS - 1 do
+            local line = frame:CreateTexture(nil, "ARTWORK", nil, 7)
+            line:SetColorTexture(0, 0, 0, 0.55)
+            line:Hide()
+            v.segments[i] = line
+        end
+    end
+
     v.flash = frame:CreateTexture(nil, "OVERLAY", nil, 2)
     v.flash:SetAllPoints()
     v.flash:SetColorTexture(1, 1, 1, 1)
@@ -201,12 +221,38 @@ local function NewView(frame, width, height, skinned)
     return v
 end
 
+local function FontFile(key)
+    local obj
+    for _, name in ipairs(FONT_OBJECTS) do
+        if name == key then obj = _G[name] end
+    end
+    local file = obj and obj.GetFont and obj:GetFont()
+    if type(file) == "string" and file ~= "" then return file end
+end
+
+-- Text size, font and outline. A font the client cannot load (SetFont gives false) falls back to the
+-- game's normal one rather than leaving the text blank.
 local function ApplyTextSize(v)
     local k = min(1.6, max(0.6, v.height / BASE_HEIGHT))
+    local file, flags = FontFile(db.font) or FONT, db.fontOutline and "OUTLINE" or ""
     for _, t in ipairs(v.texts) do
         local s = t.spec
-        t.fs:SetFont(FONT, floor(s.size * k + 0.5), "OUTLINE")
+        local size = floor(s.size * k + 0.5)
+        if t.fs:SetFont(file, size, flags) == false then t.fs:SetFont(FONT, size, flags) end
         t.fs:SetPoint(s.point, v.frame, s.relPoint, s.x, s.y * k)
+    end
+end
+
+local function ApplySegments(v)
+    if not v.segments then return end
+    for i, line in ipairs(v.segments) do
+        if db.segments then
+            local x = floor(v.width * i / SEGMENTS + 0.5)
+            line:SetPoint("TOPLEFT", x, 0)
+            line:SetPoint("BOTTOMLEFT", x, 0)
+            line:SetWidth(1)
+        end
+        line:SetShown(db.segments)
     end
 end
 
@@ -225,6 +271,7 @@ bar:RegisterForDrag("LeftButton")
 
 main = NewView(bar, barWidth, barHeight, false)
 ApplyTextSize(main)
+ApplySegments(main)
 
 -- Hidden at max level (unless kept there); each view also has its own setting.
 local barsWanted = true
@@ -885,8 +932,17 @@ local function OnViewResized(v, w, h)
     v.liquid:SetSize(w, h)
     v.liquid:Snap(A.fill * w)
     ApplyTextSize(v)
+    ApplySegments(v)
     ApplyRounding(v)
     RenderBar()
+end
+
+local function ApplyTextAll()
+    for _, v in ipairs(views) do ApplyTextSize(v) end
+end
+
+local function ApplySegmentsAll()
+    for _, v in ipairs(views) do ApplySegments(v) end
 end
 
 local function ApplySize()
@@ -1269,6 +1325,9 @@ local SETTING_APPLY = {
     showSessionTime = UpdateSessionTexts,
     showXPHour = UpdateSessionTexts,
     showQuestRested = UpdateSessionTexts,
+    font = ApplyTextAll,
+    fontOutline = ApplyTextAll,
+    segments = ApplySegmentsAll,
     waves = ApplyLiquidOptions,
     bubbles = ApplyLiquidOptions,
     sparkles = ApplyLiquidOptions,
@@ -1401,6 +1460,21 @@ function Core.Get(key)
     return db[key]
 end
 
+-- The fonts this client has, for the settings page: { key = font object name, name = label }.
+function Core.Fonts()
+    local list, seen = {}, {}
+    for _, key in ipairs(FONT_OBJECTS) do
+        local file = FontFile(key)
+        local id = file and file:upper()
+        if id and not seen[id] then
+            seen[id] = true
+            local stem = id:match("([^\\/]+)%.%w+$") or id
+            list[#list + 1] = { key = key, name = FONT_NAMES[stem] or (stem:sub(1, 1) .. stem:sub(2):lower()) }
+        end
+    end
+    return list
+end
+
 -- Through the settings control where there is one, so the settings page follows.
 function Core.SetSetting(key, value)
     if not (ns.Options.Set and ns.Options.Set(key, value)) then
@@ -1425,6 +1499,7 @@ function Core.NewPreview(parent, look)
     ApplyTheme()
     ApplyRounding(v)
     ApplyTextSize(v)
+    ApplySegments(v)
     UpdateSessionTexts()
     RenderText(true)
     return v

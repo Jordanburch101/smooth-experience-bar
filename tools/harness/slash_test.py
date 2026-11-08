@@ -175,7 +175,7 @@ check(category.name == "Smooth Experience Bar" and category.frame is not None, "
 check(any(i.kind == "dropdown" and i.key == "theme" for i in items), "theme dropdown")
 check(sum(1 for i in items if i.kind == "button") == 8, "eight buttons")
 setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n = n + 1 end return n end")()
-check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 26,
+check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 29,
       "a row for every setting")
 inside = lua.eval("""function(page)
     for _, row in ipairs(__settingsRows()) do
@@ -218,7 +218,7 @@ for cmd in ["unlock", "lock", "reset", "session"]:
 
 print("== every setting toggled off and back on")
 for key in ["showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
-            "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "locked", "hideBlizzardBar", "showBar", "skinDefaultBar", "resetOnReload", "showMaxLevel"]:
+            "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "segments", "fontOutline", "locked", "hideBlizzardBar", "showBar", "skinDefaultBar", "resetOnReload", "showMaxLevel"]:
     default = G.__settings[key].GetValue(G.__settings[key])
     lua.execute(f"__settings[{key!r}]:SetValue({str(not default).lower()})")
     step(f"{key}={not default}", "SlashCmdList.SMOOTHEXPERIENCEBAR('test')", 1)
@@ -236,6 +236,54 @@ for key, value in [("scale", 1.2), ("speed", 0.5), ("speed", 2)]:
     lua.execute(f"__settings[{key!r}]:SetValue({value})")
     step(f"{key}={value}", "SlashCmdList.SMOOTHEXPERIENCEBAR('test level')", 2)
 check(G.SmoothExperienceBarFrame.scale == 1.2, "scale applied")
+
+print("== font, outline and segments")
+main_texts = lua.eval("""function()
+    local out = {}
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.parent == SmoothExperienceBarFrame then out[#out + 1] = r end
+    end
+    return out
+end""")
+
+
+def fonts():
+    t = main_texts()
+    return {(t[i + 1].fontFile, t[i + 1].fontFlags) for i in range(len(t))}
+
+
+check(fonts() == {(r"Fonts\FRIZQT__.TTF", "OUTLINE")}, f"text starts in the game font with an outline {fonts()}")
+font_dd = next(i for i in items if i.kind == "dropdown" and i.key == "font")
+opts = font_dd.getOptions()
+names = [opts[i + 1].label for i in range(len(opts))]
+check(names == ["Friz Quadrata", "Arial Narrow", "Morpheus", "Skurri"], f"font list, one entry per file {names}")
+lua.execute("__settings.font:SetValue('QuestTitleFont'); __settings.fontOutline:SetValue(false)")
+check(fonts() == {(r"Fonts\MORPHEUS.TTF", "")}, f"font and outline change on the bar {fonts()}")
+lua.execute(r"__fontFiles['FONTS\\MORPHEUS.TTF'] = nil; __settings.height:SetValue(31)")
+check(fonts() == {(r"Fonts\FRIZQT__.TTF", "")}, f"a font the client cannot load falls back to the game font {fonts()}")
+lua.execute(r"""__fontFiles['FONTS\\MORPHEUS.TTF'] = true; __settings.height:SetValue(30)
+    __settings.font:SetValue('GameFontNormal'); __settings.fontOutline:SetValue(true)""")
+segment_lines = lua.eval("""function(frame)
+    local n, xs = 0, {}
+    for _, r in ipairs(__regions) do
+        if r.parent == frame and r.kind == "Texture" and r.layer == "ARTWORK" and r.sub == 7 and r.file == "SOLID"
+            and r.shown then
+            n = n + 1
+            xs[#xs + 1] = r.points.TOPLEFT.x
+        end
+    end
+    table.sort(xs)
+    return n, xs[1], xs[#xs]
+end""")
+check(segment_lines(G.SmoothExperienceBarFrame)[0] == 0, "Segmented Bar off by default")
+lua.execute("__settings.segments:SetValue(true)")
+n, first, last = segment_lines(G.SmoothExperienceBarFrame)
+check((n, first, last) == (19, 30, 570), f"Segmented Bar: 19 lines every 5% ({n}, {first}, {last})")
+lua.execute("__settings.width:SetValue(800)")
+n, first, last = segment_lines(G.SmoothExperienceBarFrame)
+check((n, first, last) == (19, 40, 760), f"Segmented Bar: lines follow the width ({n}, {first}, {last})")
+lua.execute("__settings.width:SetValue(600); __settings.segments:SetValue(false)")
+check(segment_lines(G.SmoothExperienceBarFrame)[0] == 0, "Segmented Bar off again")
 
 print("== themes")
 for i in range(len(ns.Themes.order)):

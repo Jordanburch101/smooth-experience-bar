@@ -26,14 +26,19 @@ FONT_CANDIDATES = [
     r"C:\Windows\Fonts\arialbd.ttf",
 ]
 FONT_PATH = next(p for p in FONT_CANDIDATES if p and os.path.exists(p))
+# The other game fonts the addon offers, where a copy is at hand; the rest draw in FONT_PATH.
+OTHER_FONTS = {"ARIALN": r"C:\Windows\Fonts\ARIALN.TTF"}
 _fonts = {}
 
 
-def font(size):
+def font(size, file=None):
     size = max(6, int(round(size)))
-    if size not in _fonts:
-        _fonts[size] = ImageFont.truetype(FONT_PATH, size)
-    return _fonts[size]
+    stem = os.path.splitext((file or "").replace("\\", "/").split("/")[-1])[0].upper()
+    path = OTHER_FONTS.get(stem, "")
+    path = path if os.path.exists(path) else FONT_PATH
+    if (path, size) not in _fonts:
+        _fonts[path, size] = ImageFont.truetype(path, size)
+    return _fonts[path, size]
 
 
 # The scenario the previews play: login, a few kills, a quest turn-in, then a level-up.
@@ -100,7 +105,7 @@ class Session:
         self._step = self.G["__step"]
         apply = "".join(f"__settings[{k!r}]:SetValue({lua_value(v)}); " for k, v in (settings or {}).items())
         self.lua.execute("__fire('ADDON_LOADED', 'SmoothExperienceBar'); " + apply + before_login
-                         + "; __fire('PLAYER_ENTERING_WORLD', true, false); " + after_login)
+                         + "\n__fire('PLAYER_ENTERING_WORLD', true, false); " + after_login)
         self.pending = sorted(scenario, key=lambda e: e[0])
         self.t = 0.0
         self._media = {}
@@ -212,7 +217,7 @@ class Session:
                 color = (255, 255, 255)
             elif part:
                 segments.append((part, color))
-        f = font(r.fontSize * k)
+        f = font(r.fontSize * k, r.fontFile)
         # Real text width, so right-aligned and centred text sits where the game puts it.
         point, a = next(iter((p, r.points[p]) for p in r.points))
         bw, bh = self.bar_size
@@ -225,7 +230,7 @@ class Session:
         elif "LEFT" not in point:
             x -= total / 2
         valign = "a" if "TOP" in point else ("d" if "BOTTOM" in point else "m")
-        stroke = max(1, int(round(k * 0.8)))
+        stroke = max(1, int(round(k * 0.8))) if "OUTLINE" in (r.fontFlags or "") else 0
         for s, c in segments:
             draw.text((x + k, y + k), s, font=f, fill=(0, 0, 0, 200), anchor="l" + valign,
                       stroke_width=stroke, stroke_fill=(0, 0, 0, 200))

@@ -38,6 +38,8 @@ Open the settings with `/seb`, by right-clicking the bar, or from Options > AddO
 - Show the liquid inside the game's own experience bar, instead of the separate bar or as well as it.
   Hover it for the rest of the numbers.
 - Toggle each line of text, or hide the default experience bar.
+- Pick the text's font from the game's own fonts and turn its outline off, or divide the bar into 20
+  segments like the game's experience bar.
 - A setup wizard with live previews walks through all of this the first time (`/seb setup` to open it again).
 - Change the fill speed, or switch the liquid waves, swirl, bubbles, sparkles, ambient particles, lightning
   and level-up flash on and off.
