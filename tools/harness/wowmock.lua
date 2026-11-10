@@ -80,6 +80,7 @@ function Region:GetVerticalScroll() return self.vscroll or 0 end
 function Region:SetVerticalScroll(v) self.vscroll = v end
 function Region:GetVerticalScrollRange() return 0 end
 function Region:SetAlpha(a) self.alpha = a end
+function Region:GetAlpha() return self.alpha end
 function Region:SetScale(s) self.scale = s end
 local STRATA = { BACKGROUND = true, LOW = true, MEDIUM = true, HIGH = true, DIALOG = true,
                  FULLSCREEN = true, FULLSCREEN_DIALOG = true, TOOLTIP = true }
@@ -147,6 +148,7 @@ function Region:SetToplevel() end
 function Region:SetChecked(v) self.checked = not not v end
 function Region:GetChecked() return self.checked end
 function Region:SetText(t) self.text = t end
+function Region:GetText() return self.text end
 function Region:SetFormattedText(fmt, ...) self.text = string.format(fmt, ...) end
 function Region:GetStringWidth()
     local plain = (self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")

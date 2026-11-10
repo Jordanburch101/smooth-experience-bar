@@ -15,10 +15,16 @@ https://www.wowhead.com/icon=6841475/inv-cosmicdragonmount).
 
 `gallery/` holds listing screenshots (1600x900), `hero.gif` and `default-bar.gif`, rendered from the real
 addon code by `tools/harness/gallery.py`. The screenshots and `hero.gif` are drawn over
-`gallery-backdrop.jpg` (a crop of an in-game screenshot). `default-bar.gif` shows Use Default Experience Bar
-over `default-bar-backdrop.png`, an in-game screenshot of WoW Forever's action bars: the script empties the
-experience bar in it and draws the liquid there, with the game's segment lines over it and the text on top.
+`gallery-backdrop.jpg` (a crop of an in-game screenshot). `default-bar.gif` shows the liquid in the
+default experience bar over `default-bar-backdrop.png`, an in-game screenshot of WoW Forever's action bars:
+the script empties the experience bar in it and draws the liquid there, with the game's segment lines over it and the text on top.
 Its position in the screenshot is `DEFAULT_BAR` in the script; measure it again if the screenshot changes.
+
+`action-bars.png` is an in-game screenshot of WoW Forever's action bars, gryphons and all. `tools/make_media.py`
+builds `SmoothExperienceBar/Media/ActionBars.tga` from it for the setup wizard's placement scene: the world
+behind made transparent, the experience bar emptied and the middle of the bars cut out so they fit the
+wizard. The cut and the bar's position are measured on this screenshot; measure them again if it changes,
+and update `ACTION_BARS` in `Wizard.lua` to match.
 
 Text uses the game font; the script looks for a copy of `frizqt__.ttf` (DialogueUI ships one) or
 `SEB_FONT`, else falls back to Arial. Session numbers are seeded so they look like a real play session.

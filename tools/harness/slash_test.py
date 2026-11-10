@@ -117,7 +117,7 @@ check(wui.next.text == "Finish", "wizard: last step finishes")
 click(wui.next, 1)
 mine = G.SmoothExperienceBarDB.profiles["Testchar - Mockrealm"]
 check(not st.frame.shown and mine.setupPending is None, "wizard: Finish closes it for good")
-check(mine.showBar and mine.skinDefaultBar and mine.theme == "fel" and not mine.waves and not mine.lightning
+check(mine.bars == "both" and mine.theme == "fel" and not mine.waves and not mine.lightning
       and not mine.showLevelTime and not mine.showQuestRested,
       "wizard: the picks are applied")
 check(G.__settings.theme.GetValue(G.__settings.theme) == "fel", "wizard: applied through the settings controls")
@@ -157,7 +157,7 @@ check(not st.frame.shown, "wizard: skipped, it stays closed at the next login")
 # Back to the defaults for the tests below.
 lua.execute("""
     local d = ns_defaults
-    for _, k in ipairs({ "showBar", "skinDefaultBar", "theme", "waves", "swirl", "bubbles", "sparkles", "ambient",
+    for _, k in ipairs({ "bars", "theme", "waves", "swirl", "bubbles", "sparkles", "ambient",
                          "lightning", "restedGlow", "glass", "rounding", "flash", "showLevelTime", "showSessionTime",
                          "showXPHour", "showQuestRested" }) do
         __settings[k]:SetValue(d[k])
@@ -175,8 +175,32 @@ check(category.name == "Smooth Experience Bar" and category.frame is not None, "
 check(any(i.kind == "dropdown" and i.key == "theme" for i in items), "theme dropdown")
 check(sum(1 for i in items if i.kind == "button") == 8, "eight buttons")
 setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n = n + 1 end return n end")()
-check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 29,
+check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 34,
       "a row for every setting")
+# Each bar has its own section, shown only while that bar is used.
+shown_rows = lambda: {i.key or i.name for i in G.__settingsRows().values() if i.frame.shown}
+bars_dd = next(i for i in items if i.kind == "dropdown" and i.key == "bars")
+bars_opts = bars_dd.getOptions()
+check([bars_opts[i + 1].label for i in range(len(bars_opts))] == ["Separate Bar", "Default Experience Bar", "Both"],
+      "Experience Bar: the setup wizard's three choices")
+rows = shown_rows()
+check({"Separate Bar", "width", "showXPHour", "rounding", "hideBlizzardBar", "Reset Position & Size"} <= rows
+      and not rows & {"Default Experience Bar", "defaultLevelTime", "defaultXPText", "defaultTooltip"},
+      "separate bar: its section shown, the default bar's not")
+lua.execute("__settings.bars:SetValue('default')")
+rows = shown_rows()
+check({"Default Experience Bar", "defaultLevelTime", "defaultXPText", "defaultTooltip", "defaultQuestBar",
+       "defaultRestedBar", "theme", "speed"} <= rows
+      and not rows & {"Separate Bar", "width", "locked", "showXPHour", "rounding", "hideBlizzardBar", "questBar",
+                     "restedBar"},
+      "default bar: its section shown, the separate bar's not")
+lua.execute("__settings.bars:SetValue('both')")
+rows = shown_rows()
+check({"width", "defaultXPText"} <= rows and "hideBlizzardBar" not in rows,
+      "both: both sections, and no Hide Default Experience Bar while the liquid is in it")
+tops = [i.frame.points.TOPLEFT.y for i in G.__settingsRows().values() if i.frame.shown]
+check(all(a > b for a, b in zip(tops, tops[1:])), "shown rows laid out one under the other, no gaps")
+lua.execute("__settings.bars:SetValue('separate')")
 inside = lua.eval("""function(page)
     for _, row in ipairs(__settingsRows()) do
         local f = row.frame
@@ -218,7 +242,8 @@ for cmd in ["unlock", "lock", "reset", "session"]:
 
 print("== every setting toggled off and back on")
 for key in ["showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
-            "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "segments", "fontOutline", "locked", "hideBlizzardBar", "showBar", "skinDefaultBar", "resetOnReload", "showMaxLevel"]:
+            "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "fontOutline", "locked", "hideBlizzardBar", "defaultLevelTime", "defaultXPText", "defaultTooltip", "questBar", "restedBar", "defaultQuestBar",
+            "defaultRestedBar", "resetOnReload", "showMaxLevel"]:
     default = G.__settings[key].GetValue(G.__settings[key])
     lua.execute(f"__settings[{key!r}]:SetValue({str(not default).lower()})")
     step(f"{key}={not default}", "SlashCmdList.SMOOTHEXPERIENCEBAR('test')", 1)
@@ -237,7 +262,7 @@ for key, value in [("scale", 1.2), ("speed", 0.5), ("speed", 2)]:
     step(f"{key}={value}", "SlashCmdList.SMOOTHEXPERIENCEBAR('test level')", 2)
 check(G.SmoothExperienceBarFrame.scale == 1.2, "scale applied")
 
-print("== font, outline and segments")
+print("== font and outline")
 main_texts = lua.eval("""function()
     local out = {}
     for _, r in ipairs(__regions) do
@@ -263,27 +288,6 @@ lua.execute(r"__fontFiles['FONTS\\MORPHEUS.TTF'] = nil; __settings.height:SetVal
 check(fonts() == {(r"Fonts\FRIZQT__.TTF", "")}, f"a font the client cannot load falls back to the game font {fonts()}")
 lua.execute(r"""__fontFiles['FONTS\\MORPHEUS.TTF'] = true; __settings.height:SetValue(30)
     __settings.font:SetValue('GameFontNormal'); __settings.fontOutline:SetValue(true)""")
-segment_lines = lua.eval("""function(frame)
-    local n, xs = 0, {}
-    for _, r in ipairs(__regions) do
-        if r.parent == frame and r.kind == "Texture" and r.layer == "ARTWORK" and r.sub == 7 and r.file == "SOLID"
-            and r.shown then
-            n = n + 1
-            xs[#xs + 1] = r.points.TOPLEFT.x
-        end
-    end
-    table.sort(xs)
-    return n, xs[1], xs[#xs]
-end""")
-check(segment_lines(G.SmoothExperienceBarFrame)[0] == 0, "Segmented Bar off by default")
-lua.execute("__settings.segments:SetValue(true)")
-n, first, last = segment_lines(G.SmoothExperienceBarFrame)
-check((n, first, last) == (19, 30, 570), f"Segmented Bar: 19 lines every 5% ({n}, {first}, {last})")
-lua.execute("__settings.width:SetValue(800)")
-n, first, last = segment_lines(G.SmoothExperienceBarFrame)
-check((n, first, last) == (19, 40, 760), f"Segmented Bar: lines follow the width ({n}, {first}, {last})")
-lua.execute("__settings.width:SetValue(600); __settings.segments:SetValue(false)")
-check(segment_lines(G.SmoothExperienceBarFrame)[0] == 0, "Segmented Bar off again")
 
 print("== themes")
 for i in range(len(ns.Themes.order)):
@@ -439,7 +443,7 @@ lua.execute("""
 check(not containers[2].shown, "Forever: a bar the game hid meanwhile stays hidden when the option is off")
 
 # Use Default Experience Bar: a second bar drawn over the game's own XP bar (setting, or /seb skin),
-# next to the separate bar or instead of it (Show Separate Bar).
+# next to the separate bar or instead of it (Experience Bar: Both or Default Experience Bar).
 lua.execute("__chat = {}")
 slash("skin", 0.2)
 check(any("Could not find the default experience bar" in m for m in G.__chat.values())
@@ -455,6 +459,15 @@ lua.execute("""
     xp.StatusBar:SetFrameStrata('MEDIUM')
     xp.StatusBar:SetFrameLevel(4)
     xp.ExhaustionTick = CreateFrame('Frame', nil, xp)
+    -- The game's own XP text, shown with Status Text set to always show.
+    xp.OverlayFrame = CreateFrame('Frame', nil, xp)
+    xp.OverlayFrame.Text = xp.OverlayFrame:CreateFontString(nil, 'OVERLAY')
+    xp.OverlayFrame.Text:SetText('XP: 204931 / 311490')
+    -- Text kept somewhere else on the bar, and another addon's text on it.
+    __xpTextElsewhere = xp.StatusBar:CreateFontString(nil, 'OVERLAY')
+    __xpTextElsewhere:SetText('204,931 / 311,490')
+    __otherText = xp:CreateFontString(nil, 'OVERLAY')
+    __otherText:SetText('Rested')
     container.bars = { [1] = rep, [4] = xp }
     -- The segment lines sit in a frame above the bar.
     local lines = CreateFrame('Frame', nil, container)
@@ -472,6 +485,10 @@ check(skin.GetFrameStrata(skin) == "MEDIUM" and skin.level > 4 and skin.scale ==
 check(lua.eval("SmoothExperienceBarFrame.parent == UIParent") and bar.shown and (bar.w, bar.h) == (600, 30)
       and bar.scale == 0.65, "both: the separate bar stays as it was")
 check(any("Drawing over" in m and "571x13" in m for m in G.__chat.values()), "skin: reported in chat")
+game_text = lua.eval("__xpBar.OverlayFrame.Text")
+check(game_text.alpha == 0, "skin: the game's own XP text hidden under the default bar's, so it does not show twice")
+check(lua.eval("__xpTextElsewhere").alpha == 0 and lua.eval("__otherText").alpha == 1,
+      "skin: other XP numbers on the bar hidden too, other text there left alone")
 
 # A view's text line starting with prefix: its anchors ("POINT relPoint x y"), whether shown, its parent.
 line = lua.eval("""function(frame, prefix)
@@ -540,14 +557,53 @@ lua.execute("SmoothExperienceBarDefaultFrame.scripts.OnLeave(SmoothExperienceBar
 run(1.2)
 check(not G.GameTooltip.shown, "skin tooltip: hidden on leave, and the ticker does not bring it back")
 slash("test off", 2)
-lua.execute("__settings.showBar:SetValue(false)")
-check(not bar.shown and skin.shown, "separate bar off: only the default bar's shown")
+lua.execute("__settings.bars:SetValue('default')")
+check(not bar.shown and skin.shown, "default bar only: the separate bar hidden")
 check(skin_texts() == "204,931 / 311,490 (106,559) | left: Time this level: 6m",
       f"default bar only: still no lines around it ({skin_texts()})")
 lua.execute("__settings.showLevelTime:SetValue(false)")
-check("left: Level 57" in skin_texts(), "Time This Level off: the default bar shows the level instead")
-lua.execute("__settings.showLevelTime:SetValue(true)")
-check("left: Time this level" in skin_texts(), "Time This Level back on: the default bar shows it again")
+check("left: Time this level" in skin_texts(), "the separate bar's Time This Level leaves the default bar alone")
+lua.execute("__settings.showLevelTime:SetValue(true); __settings.defaultLevelTime:SetValue(false)")
+check(skin_texts() == "204,931 / 311,490 (106,559)", f"default bar's Time This Level off: nothing on its left ({skin_texts()})")
+lua.execute("__settings.defaultLevelTime:SetValue(true)")
+check("left: Time this level" in skin_texts(), "default bar's Time This Level back on: it shows it again")
+lua.execute("__settings.defaultXPText:SetValue(false)")
+check(skin_texts() == "left: Time this level: 6m" and game_text.alpha == 1,
+      f"default bar's XP off: no XP of ours on it, the game's own back ({skin_texts()})")
+lua.execute("__settings.defaultXPText:SetValue(true)")
+check("204,931 / 311,490" in skin_texts() and game_text.alpha == 0, "default bar's XP back on, the game's hidden again")
+# Completed quest and rested segments: (shown, width) of each, per bar.
+segment = lua.eval('''function(frame, sub)
+    for _, r in ipairs(__regions) do
+        if r.parent == frame and r.kind == "Texture" and r.layer == "ARTWORK" and r.sub == sub and r.file == "SOLID" then
+            return r.shown and r.w or 0
+        end
+    end
+end''')
+quest_w = lambda f: segment(f, 1)
+rested_w = lambda f: segment(f, 0)
+lua.execute("__settings.bars:SetValue('both')")
+run(0.5)
+both_q, both_r = quest_w(skin), rested_w(skin)
+check(both_q > 0 and both_r > 0 and quest_w(bar) > 0 and rested_w(bar) > 0,
+      f"both bars show completed quest and rested XP ({both_q:.1f}, {both_r:.1f})")
+lua.execute("__settings.defaultQuestBar:SetValue(false)")
+run(0.2)
+check(quest_w(skin) == 0 and rested_w(skin) > 0 and quest_w(bar) > 0,
+      "default bar's Completed Quest Bar off: only its quest segment goes, rested moves up to the fill")
+lua.execute("__settings.defaultRestedBar:SetValue(false)")
+run(0.2)
+check(quest_w(skin) == 0 and rested_w(skin) == 0 and rested_w(bar) > 0, "default bar's Rested Bar off: its rested segment goes")
+lua.execute("__settings.questBar:SetValue(false); __settings.restedBar:SetValue(false)")
+run(0.2)
+check(quest_w(bar) == 0 and rested_w(bar) == 0, "separate bar's Completed Quest Bar and Rested Bar off")
+lua.execute('''__settings.questBar:SetValue(true); __settings.restedBar:SetValue(true)
+    __settings.defaultQuestBar:SetValue(true); __settings.defaultRestedBar:SetValue(true)
+    __settings.bars:SetValue('default')''')
+lua.execute("GameTooltip:Hide(); __settings.defaultTooltip:SetValue(false)")
+lua.execute("SmoothExperienceBarDefaultFrame.scripts.OnEnter(SmoothExperienceBarDefaultFrame)")
+check(not G.GameTooltip.shown, "default bar's Tooltip off: no tooltip on hover")
+lua.execute("__settings.defaultTooltip:SetValue(true)")
 slash("test", 4)
 check("229,850" in skin_texts(), "default bar only: still animates with the separate bar hidden")
 slash("test off", 2)
@@ -557,11 +613,12 @@ check((skin.w, skin.h) == (700, 15), "skin: follows the XP bar's size")
 lua.execute("__settings.hideBlizzardBar:SetValue(true)")
 check(containers[1].shown, "skin: the default bar is not hidden while drawn over")
 lua.execute("__settings.hideBlizzardBar:SetValue(false)")
-lua.execute("__settings.showBar:SetValue(true)")
+lua.execute("__settings.bars:SetValue('both')")
 check(bar.shown and line(bar, "Leveling in").anchors == "LEFT BOTTOMLEFT 0 -18",
       "separate bar back: its lines under it as before")
-step("setting off", "__settings.skinDefaultBar:SetValue(false)", 0.2)
+step("setting off", "__settings.bars:SetValue('separate')", 0.2)
 check(not skin.shown and bar.shown and (bar.w, bar.h) == (600, 30), "skin off: only the separate bar, as it was")
+check(game_text.alpha == 1 and lua.eval("__xpTextElsewhere").alpha == 1, "skin off: the game's own XP text back")
 
 # XP values can be secret in combat: nothing may break, and the bar and XP/hour catch up afterwards.
 chardb = G.SmoothExperienceBarCharDB
@@ -632,13 +689,16 @@ print("== per-character profiles")
 lua2 = LuaRuntime(unpack_returned_tuples=True)
 lua2.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
 lua2.execute("issecretvalue = nil; __interface = 11509")
-lua2.execute("SmoothExperienceBarDB = { theme = 'fel', width = 820, glass = true, layout = 2, point = { 'TOP', 'UIParent', 'TOP', 0, -90 } }")
+lua2.execute("SmoothExperienceBarDB = { theme = 'fel', width = 820, glass = true, layout = 2, point = { 'TOP', 'UIParent', 'TOP', 0, -90 }, "
+              "showBar = false, skinDefaultBar = true, showLevelTime = false }")
 G2 = lua2.globals()
 G2.__loadAddon(ADDON.replace("\\", "/"), "SmoothExperienceBar")
 lua2.execute("__fire('ADDON_LOADED', 'SmoothExperienceBar'); __fire('PLAYER_ENTERING_WORLD', true, false)")
 mine = lua2.eval("SmoothExperienceBarDB.profiles['Testchar - Mockrealm']")
 check(mine is not None and mine.theme == "fel" and mine.width == 820 and mine.glass,
       "old account-wide settings carried into this character's profile")
+check(mine.bars == "default" and mine.defaultLevelTime is False and mine.showBar is None and mine.skinDefaultBar is None,
+      "the old bar checkboxes become the Experience Bar choice, and the default bar keeps its time this level setting")
 for _ in range(240):
     G2.__step(1 / 60)
 setup2 = lua2.eval("SmoothExperienceBarSetup")

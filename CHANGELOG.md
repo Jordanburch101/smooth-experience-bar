@@ -6,6 +6,32 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.4.0
+
+### New
+- Experience Bar: one setting picks where your experience shows, the same
+  choice as the setup wizard: the separate bar, the default experience bar
+  or both. It replaces Show Separate Bar and Use Default Experience Bar;
+  your current choice carries over.
+- The settings now have a section for each bar, shown while that bar is
+  used. The separate bar's has its size, lock, text lines, Rounded Liquid
+  and Hide Default Experience Bar.
+- The default experience bar has settings of its own: Time This Level,
+  XP, and the hover Tooltip. Untick Time This Level for no text on its
+  left; it used to show the level there. It no longer follows the
+  separate bar's Time This Level.
+- Completed Quest Bar and Rested Bar: hide the completed quest XP or the
+  rested XP segment, on each bar separately.
+- Segmented Bar is gone from the settings, and the separate bar no longer
+  has segment lines. The default experience bar keeps the game's own.
+- The setup wizard shows the game's own action bars, gryphons and all,
+  with the liquid in the experience bar between them.
+
+### Fixed
+- The default experience bar no longer shows your XP twice when the
+  game's own XP text is set to always show. The game's text comes back if
+  you untick the bar's XP.
+
 ## 1.3.0
 
 ### New

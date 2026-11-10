@@ -26,7 +26,7 @@ SEED_AFTER = "SmoothExperienceBarCharDB.startTime = time() - 5400; SmoothExperie
 
 _source = Image.open(BACKDROP).convert("RGB")
 
-# Use Default Experience Bar, over an in-game screenshot of Forever's action bars: where the game's
+# The default experience bar (Experience Bar: Default Experience Bar), over an in-game screenshot of Forever's action bars: where the game's
 # experience bar is in it (screen px), the UI scale it was taken at, and the game's segment lines
 # over the bar (start + step * i), with a clean one to copy to each, as the game draws them over the
 # liquid and under the text.
@@ -90,7 +90,7 @@ def default_bar_gif(name, start=0.8, end=9.6, fps=20):
     ImageDraw.Draw(base).rectangle([b["left"], b["top"], b["left"] + b["width"] - 1, b["top"] + b["height"] - 1],
                                    fill=(10, 8, 7))
     k = b["ui_scale"]
-    s = Session(ADDON, {"showBar": False, "skinDefaultBar": True},
+    s = Session(ADDON, {"bars": "default"},
                 before_login=SEED_BEFORE + FAKE_XP_BAR % (b["width"] / k, b["height"] / k),
                 after_login=SEED_AFTER, frame="SmoothExperienceBarDefaultFrame")
 

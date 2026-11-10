@@ -67,7 +67,7 @@ end
 -- The choices as they stand in the settings, so running the wizard again starts from them.
 local function CurrentChoices()
     local get = ns.Core.Get
-    local place = get("skinDefaultBar") and (get("showBar") and "both" or "default") or "separate"
+    local place = get("bars")
     local effects = "balanced"
     for _, key in ipairs({ "full", "calm", "balanced" }) do
         local match = true
@@ -219,40 +219,55 @@ function BUILD.welcome(p)
     ui.welcomeSkip:SetPoint("TOPLEFT", p, "TOP", 6, -272)
 end
 
--- The placement scene, shared with the last page: the separate bar above, and below it a stand-in
--- for the game's experience bar and action buttons, filled by the default bar's liquid when chosen.
+-- The game's action bars (Media\ActionBars, made by tools/make_media.py from a screenshot of
+-- Forever's): the composite's size in the screenshot's pixels, the part of the texture it fills, and
+-- where its experience bar is, emptied for the wizard to fill.
+local ACTION_BARS = { w = 1187, h = 144, texBottom = 124 / 128, bar = { x = 170, y = 67, w = 823, h = 13 } }
+
+-- The placement scene, shared with the last page: the separate bar above, and below it the game's
+-- action bars, their experience bar filled by the default bar's liquid when chosen and by the game's
+-- own fill when not.
 local function BuildScene()
     local scene = Panel(frame, 760, 200, 0.55)
-    scene.bar = Preview(scene, "bar", 0.9, "TOP", 0, -36)
-    local game = CreateFrame("Frame", nil, scene)
-    game:SetSize(714, 16)
-    game:SetPoint("BOTTOM", 0, 52)
-    local bg = game:CreateTexture(nil, "BACKGROUND")
-    bg:SetPoint("TOPLEFT", -3, 3)
-    bg:SetPoint("BOTTOMRIGHT", 3, -3)
-    bg:SetColorTexture(0.07, 0.055, 0.04, 1)
-    -- The game's own fill and segment lines, where nothing draws over it.
-    scene.gameFill = {}
-    local fill = game:CreateTexture(nil, "ARTWORK")
+    scene.bar = Preview(scene, "bar", 0.85, "TOP", 0, -38)
+
+    local A = ACTION_BARS
+    local k = 744 / A.w
+    local art = CreateFrame("Frame", nil, scene)
+    art:SetSize(A.w, A.h)
+    art:SetScale(k)
+    art:SetPoint("BOTTOM", scene, "BOTTOM", 0, 2 / k)
+    local tex = art:CreateTexture(nil, "ARTWORK")
+    tex:SetAllPoints()
+    tex:SetTexture("Interface\\AddOns\\SmoothExperienceBar\\Media\\ActionBars")
+    tex:SetTexCoord(0, 1, 0, A.texBottom)
+
+    -- The experience bar: the game's own fill where nothing draws over it, the default bar's liquid
+    -- when chosen, and the game's segment lines over either.
+    local b = A.bar
+    local xp = CreateFrame("Frame", nil, art)
+    xp:SetSize(b.w, b.h)
+    xp:SetPoint("TOPLEFT", b.x, -b.y)
+    local fill = xp:CreateTexture(nil, "ARTWORK")
     fill:SetPoint("TOPLEFT")
     fill:SetPoint("BOTTOMLEFT")
-    fill:SetWidth(714 * 0.66)
+    fill:SetWidth(b.w * 0.66)
     fill:SetColorTexture(0.35, 0.16, 0.55, 1)
-    scene.gameFill[1] = fill
+    scene.gameFill = { fill }
+    scene.skin = ns.Core.NewPreview(xp, "skin", b.w, b.h)
+    scene.skin.frame:SetPoint("TOPLEFT")
+    previews[#previews + 1] = scene.skin
+    local lines = CreateFrame("Frame", nil, xp)
+    lines:SetAllPoints()
+    lines:SetFrameLevel(scene.skin.frame:GetFrameLevel() + 2)
+    scene.skin.textFrame:SetFrameLevel(lines:GetFrameLevel() + 1)
     for i = 1, 19 do
-        local line = game:CreateTexture(nil, "OVERLAY")
-        line:SetColorTexture(0.04, 0.03, 0.02, 1)
-        line:SetPoint("TOPLEFT", 714 * i / 20, 0)
-        line:SetPoint("BOTTOMLEFT", 714 * i / 20, 0)
+        local line = lines:CreateTexture(nil, "OVERLAY")
+        line:SetColorTexture(0.53, 0.49, 0.41, 1)
+        line:SetPoint("TOPLEFT", math.floor(b.w * i / 20 + 0.5), 0)
+        line:SetPoint("BOTTOMLEFT", math.floor(b.w * i / 20 + 0.5), 0)
         line:SetWidth(1)
-        scene.gameFill[#scene.gameFill + 1] = line
     end
-    for i = 0, 17 do
-        local slot = Panel(scene, 34, 34, 0.6)
-        slot:SetPoint("TOPLEFT", game, "BOTTOMLEFT", i * 40, -9)
-    end
-    scene.skin = Preview(scene, "skin", 714 / 571, "TOPLEFT", 0, 0, game)
-    scene.skin.frame:SetFrameLevel(game:GetFrameLevel() + 2)
     return scene
 end
 
@@ -409,8 +424,7 @@ end
 -- Apply the choices through the settings controls, so the settings page shows them.
 local function Apply()
     local set = ns.Core.SetSetting
-    set("showBar", choice.place ~= "default")
-    set("skinDefaultBar", choice.place ~= "separate")
+    set("bars", choice.place)
     set("theme", choice.theme)
     for key, value in pairs(Preset(choice.effects)) do set(key, value) end
     if choice.place ~= "default" then

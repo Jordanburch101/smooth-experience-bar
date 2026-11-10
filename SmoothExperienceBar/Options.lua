@@ -21,34 +21,46 @@ local PAD, PAD_LEFT, SPACING = 10, 25, 9
 local ROW_H, SECTION_H = 26, 45
 
 local category, canvas, content, db, defaults
-local rows = {} -- { frame, initializer, height }, in page order
+local rows = {} -- { frame, initializer, height, when }, in page order
 local registered = {}
+local LayoutRows
+
+-- The section rows go in: a section for one of the bars shows only while that bar is used, so the
+-- page follows the Experience Bar choice. when is a function saying whether its rows show.
+local section
 
 local function Register(key, name)
     local default = defaults[key]
     local setting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_" .. key, key, db, type(default), name, default)
     setting:SetValueChangedCallback(function(_, value)
         ns.Core.OnSettingChanged(key, value)
+        if key == "bars" then LayoutRows() end
     end)
     registered[key] = setting
     return setting
 end
 
 -- A row: a frame of ours made from the initializer's template. The template's code finds its
--- initializer through GetElementData, as it does in the game's list.
-local function Row(initializer, height)
+-- initializer through GetElementData, as it does in the game's list. when, if given, narrows the
+-- section's own condition for this row.
+local function Row(initializer, height, when)
     local frame = CreateFrame("Frame", nil, content, initializer:GetTemplate())
     frame.GetElementData = function() return initializer end
     initializer:InitFrame(frame)
-    rows[#rows + 1] = { frame = frame, initializer = initializer, height = height or ROW_H }
+    local inSection = section
+    rows[#rows + 1] = {
+        frame = frame, initializer = initializer, height = height or ROW_H,
+        when = function() return (not inSection or inSection()) and (not when or when()) end,
+    }
 end
 
-local function Header(text)
+local function Header(text, when)
+    section = when
     Row(CreateSettingsListSectionHeaderInitializer(text), SECTION_H)
 end
 
-local function Checkbox(key, name, tooltip)
-    Row(Settings.CreateCheckboxInitializer(Register(key, name), nil, tooltip))
+local function Checkbox(key, name, tooltip, when)
+    Row(Settings.CreateCheckboxInitializer(Register(key, name), nil, tooltip), nil, when)
 end
 
 local function Slider(key, name, tooltip, minValue, maxValue, step, format)
@@ -68,6 +80,23 @@ end
 local function Button(name, text, onClick, tooltip)
     Row(CreateSettingsButtonInitializer(name, text, onClick, tooltip, false))
 end
+
+-- Which bars are used, as the setup wizard asks it.
+local BARS = {
+    { "separate", "Separate Bar" },
+    { "default", "Default Experience Bar" },
+    { "both", "Both" },
+}
+
+local function BarOptions()
+    local container = Settings.CreateControlTextContainer()
+    for _, bar in ipairs(BARS) do container:Add(bar[1], bar[2]) end
+    return container:GetData()
+end
+
+local function SeparateUsed() return db.bars ~= "default" end
+local function DefaultUsed() return db.bars ~= "separate" end
+local function SeparateOnly() return db.bars == "separate" end
 
 -- Hovering a theme in the open menu shows it on the bar; the menu calls onEnter with the option.
 local function PreviewOption(option)
@@ -137,17 +166,24 @@ local function BuildPage(title)
             row.initializer:Resetter(row.frame)
             row.initializer:InitFrame(row.frame)
         end
+        LayoutRows()
     end)
 end
 
-local function LayoutRows()
+-- Places the rows that show, one under the other, and hides the rest (the sections of a bar not in
+-- use). Only moves and hides frames of ours, so it is safe while the settings panel is open.
+function LayoutRows()
     local y = PAD
     for _, row in ipairs(rows) do
-        row.frame:ClearAllPoints()
-        row.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD_LEFT, -y)
-        row.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
-        row.frame:SetHeight(row.height)
-        y = y + row.height + SPACING
+        local shown = row.when()
+        row.frame:SetShown(shown)
+        if shown then
+            row.frame:ClearAllPoints()
+            row.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD_LEFT, -y)
+            row.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
+            row.frame:SetHeight(row.height)
+            y = y + row.height + SPACING
+        end
     end
     content:SetHeight(y - SPACING + PAD)
 end
@@ -165,27 +201,39 @@ function Options.Register(savedDB, defaultValues)
     category = Settings.RegisterCanvasLayoutCategory(canvas, title)
 
     Header("General")
+    Dropdown(Register("bars", "Experience Bar"), "Where your experience shows: a separate bar you move and "
+        .. "resize, the game's own experience bar filled with the liquid, or both. Each has its settings below.",
+        BarOptions)
     Dropdown(Register("theme", "Theme"), "Colours and effects of the bar.", ThemeOptions)
+    Dropdown(Register("font", "Font"), "Font of the bar's text, from the game's own fonts.", FontOptions)
+    Checkbox("fontOutline", "Font Outline", "A dark outline around the text. Untick for a plain drop shadow.")
+    Checkbox("showMaxLevel", "Show at Max Level", "Keep the bar visible at max level, showing time played.")
+    Checkbox("resetOnReload", "Reset Session on Reload", "Restart session time and XP/hour on /reload as well as on login.")
+
+    Header("Separate Bar", SeparateUsed)
     Checkbox("locked", "Lock Bar", "Untick to move the bar by dragging it and resize it from the corner grip.")
     Slider("scale", "Scale", "Size of the whole bar, text included.", 0.4, 1.5, 0.05, "%.2f")
     Slider("width", "Width", "Bar width. Also set by dragging the corner grip while unlocked.", 200, 1600, 10, "%d")
     Slider("height", "Height", "Bar height; text scales with it.", 16, 60, 1, "%d")
-    Checkbox("showMaxLevel", "Show at Max Level", "Keep the bar visible at max level, showing time played.")
-    Checkbox("hideBlizzardBar", "Hide Default Experience Bar",
-        "Hide the game's own experience bar. Has no effect while Use Default Experience Bar is on.")
-    Checkbox("showBar", "Show Separate Bar",
-        "The bar you can move and resize. Untick to keep only the default experience bar's.")
-    Checkbox("skinDefaultBar", "Use Default Experience Bar",
-        "Show the liquid inside the game's own experience bar too, in its place and at its size, with the time this level and your XP on it.")
+    Checkbox("showLevelTime", "Time This Level", "Played time at this level above the bar (total played at max level).")
+    Checkbox("showSessionTime", "Session Time", "Time since you logged in, above the bar.")
+    Checkbox("showXPHour", "Leveling Time & XP/Hour", "Estimated time to level from this session's XP rate, under the bar.")
+    Checkbox("showQuestRested", "Completed & Rested", "Completed quest XP and rested XP as a percentage of the level, under the bar.")
+    Checkbox("questBar", "Completed Quest Bar", "The XP of quests ready to turn in, shown after your XP in the bar.")
+    Checkbox("restedBar", "Rested Bar", "Your rested XP, shown after your XP (and completed quests) in the bar.")
+    Checkbox("rounding", "Rounded Liquid", "Shade the top and bottom of the bar so the liquid looks round.")
+    Checkbox("hideBlizzardBar", "Hide Default Experience Bar", "Hide the game's own experience bar.", SeparateOnly)
+    Button("Reset Position & Size", "Reset", Core.ResetPosition, "Move the bar back to the top of the screen at its default size.")
 
-    Header("Text")
-    Dropdown(Register("font", "Font"), "Font of the bar's text, from the game's own fonts.", FontOptions)
-    Checkbox("fontOutline", "Font Outline", "A dark outline around the text. Untick for a plain drop shadow.")
-    Checkbox("showLevelTime", "Time This Level", "Played time at this level (total played at max level).")
-    Checkbox("showSessionTime", "Session Time", "Time since you logged in.")
-    Checkbox("showXPHour", "Leveling Time & XP/Hour", "Estimated time to level from this session's XP rate.")
-    Checkbox("showQuestRested", "Completed & Rested", "Completed quest XP and rested XP as a percentage of the level.")
-    Checkbox("resetOnReload", "Reset Session on Reload", "Restart session time and XP/hour on /reload as well as on login.")
+    Header("Default Experience Bar", DefaultUsed)
+    Checkbox("defaultLevelTime", "Time This Level",
+        "Played time at this level on the left of the bar (total played at max level). Untick for no text there.")
+    Checkbox("defaultXPText", "XP", "Current and max XP, and the XP still to go, in the middle of the bar. "
+        .. "While it shows, the game's own XP text there is hidden so it does not show twice.")
+    Checkbox("defaultQuestBar", "Completed Quest Bar", "The XP of quests ready to turn in, shown after your XP in the bar.")
+    Checkbox("defaultRestedBar", "Rested Bar", "Your rested XP, shown after your XP (and completed quests) in the bar.")
+    Checkbox("defaultTooltip", "Tooltip",
+        "Hover the bar for the rest of the numbers: completed and rested XP, session time, XP/hour and the time to level.")
 
     Header("Animation")
     Slider("speed", "Fill Speed", "How quickly the liquid flows to its new level.", 0.5, 2, 0.1, "%.1fx")
@@ -198,10 +246,6 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("restedGlow", "Rested Glow", "A soft glow in the liquid while you have rested XP.")
     Checkbox("flash", "Level-Up Flash", "Flash the bar when you level up.")
     Checkbox("glass", "Glass", "Reflections along the bar, as if it were a glass tube.")
-    Checkbox("rounding", "Rounded Liquid",
-        "Shade the top and bottom of the separate bar so the liquid looks round. The default experience bar's liquid is always round.")
-    Checkbox("segments", "Segmented Bar",
-        "Divide the separate bar into 20 segments, like the game's experience bar. The default experience bar keeps its own.")
 
     -- Settings are saved per character. Pick another character, then copy their settings onto this one.
     -- The first character starts out chosen: with no value in the list the game shows "Custom".
@@ -230,7 +274,6 @@ function Options.Register(savedDB, defaultValues)
     Button("Preview Quest Turn-In", "Turn In", function() Core.Test("turnin") end, "Simulate completing and turning in a quest.")
     Button("Preview Level-Up", "Level Up", function() Core.Test("level") end, "Simulate a level-up.")
     Button("Stop Preview", "Stop", function() Core.Test("off") end, "Return the bar to your real XP.")
-    Button("Reset Position & Size", "Reset", Core.ResetPosition, "Move the bar back to the top of the screen at its default size.")
     Button("Reset Session", "Reset", Core.ResetSession, "Restart session time and XP/hour.")
     Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,
         "Pick where the bar goes, its theme, effects and text again, with live previews.")

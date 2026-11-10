@@ -18,7 +18,6 @@ local FONT = (GameFontNormal and GameFontNormal:GetFont()) or "Fonts\\FRIZQT__.T
 -- Objects that share a file are offered once, under the file's name.
 local FONT_OBJECTS = { "GameFontNormal", "NumberFontNormal", "ChatFontNormal", "QuestTitleFont", "NumberFont_Outline_Huge" }
 local FONT_NAMES = { FRIZQT__ = "Friz Quadrata", ARIALN = "Arial Narrow", MORPHEUS = "Morpheus", SKURRI = "Skurri" }
-local SEGMENTS = 20 -- Segmented Bar: as many as the game's experience bar has
 local LAYOUT_VERSION = 2 -- bump to reset saved positions when the layout changes
 
 local ANIM = {
@@ -46,8 +45,19 @@ local DEFAULTS = {
     locked = true,
     showMaxLevel = false,
     hideBlizzardBar = false,
-    showBar = true,         -- the separate bar
-    skinDefaultBar = false, -- the bar drawn over the game's own XP bar
+    -- Which bars show: "separate" (the bar you move and resize), "default" (the one drawn over the
+    -- game's own XP bar) or "both".
+    bars = "separate",
+
+    -- The default bar's own settings; the separate bar's lines are the show* below.
+    defaultLevelTime = true, -- the time this level on its left (nothing there when off)
+    defaultXPText = true,
+    defaultTooltip = true,
+    defaultQuestBar = true,  -- the completed quest XP segment after the fill
+    defaultRestedBar = true, -- the rested XP segment
+
+    questBar = true,         -- the separate bar's completed quest XP segment
+    restedBar = true,        -- and its rested XP segment
 
     showLevelTime = true,
     showSessionTime = true,
@@ -67,7 +77,6 @@ local DEFAULTS = {
     restedGlow = false,
     glass = false,
     rounding = false,
-    segments = false, -- lines dividing the separate bar
     flash = true,
 }
 
@@ -115,7 +124,7 @@ local db, cdb = DEFAULTS, nil -- db is replaced by the saved variables on ADDON_
 local theme = ns.Themes.Get(DEFAULTS.theme)
 
 -- A view is one drawing of the bar: the separate bar (main), and the one drawn over the game's own XP
--- bar (skin, Use Default Experience Bar). Either or both can be shown. They share the XP and the
+-- bar (skin, Experience Bar: Default Experience Bar). Either or both can be shown. They share the XP and the
 -- animation state below; each has its own size, liquid and text.
 local views = {}
 local main, skin
@@ -180,18 +189,6 @@ local function NewView(frame, width, height, skinned)
         v.roundR:SetPoint("BOTTOMRIGHT")
     end
 
-    -- Segmented Bar: lines over the liquid and under the glass, on the separate bar only; the game's
-    -- own bar has its lines already.
-    if not skinned then
-        v.segments = {}
-        for i = 1, SEGMENTS - 1 do
-            local line = frame:CreateTexture(nil, "ARTWORK", nil, 7)
-            line:SetColorTexture(0, 0, 0, 0.55)
-            line:Hide()
-            v.segments[i] = line
-        end
-    end
-
     v.flash = frame:CreateTexture(nil, "OVERLAY", nil, 2)
     v.flash:SetAllPoints()
     v.flash:SetColorTexture(1, 1, 1, 1)
@@ -243,19 +240,6 @@ local function ApplyTextSize(v)
     end
 end
 
-local function ApplySegments(v)
-    if not v.segments then return end
-    for i, line in ipairs(v.segments) do
-        if db.segments then
-            local x = floor(v.width * i / SEGMENTS + 0.5)
-            line:SetPoint("TOPLEFT", x, 0)
-            line:SetPoint("BOTTOMLEFT", x, 0)
-            line:SetWidth(1)
-        end
-        line:SetShown(db.segments)
-    end
-end
-
 local bar = CreateFrame("Frame", "SmoothExperienceBarFrame", UIParent)
 bar:SetSize(barWidth, barHeight)
 bar:SetScale(DEFAULTS.scale)
@@ -271,13 +255,15 @@ bar:RegisterForDrag("LeftButton")
 
 main = NewView(bar, barWidth, barHeight, false)
 ApplyTextSize(main)
-ApplySegments(main)
 
 -- Hidden at max level (unless kept there); each view also has its own setting.
 local barsWanted = true
 
+local function SeparateWanted() return db.bars ~= "default" end
+local function SkinWanted() return db.bars ~= "separate" end
+
 local function ShowViews()
-    bar:SetShown(barsWanted and db.showBar)
+    bar:SetShown(barsWanted and SeparateWanted())
     if skin then skin.frame:SetShown(barsWanted and skinTarget ~= nil) end
 end
 
@@ -595,12 +581,13 @@ local function UpdateSessionTexts()
         v.sessionTime:SetShown(around and (all or db.showSessionTime))
         v.levelInText:SetShown(around and (all or db.showXPHour) and not maxed)
         v.qrText:SetShown(around and (all or db.showQuestRested) and not maxed)
+        if v.skinned then v.xpText:SetShown(v.preview or db.defaultXPText) end
     end
 
     levelTimeText = maxed and ("Time played: " .. stats.played) or ("Time this level: " .. stats.levelTime)
     SetText("levelTime", levelTimeText)
     for _, v in ipairs(views) do
-        if v.skinned and (db.showLevelTime or v.preview) then v.levelText:SetText(levelTimeText) end
+        if v.skinned and (db.defaultLevelTime or v.preview) then v.levelText:SetText(levelTimeText) end
     end
     SetText("sessionTime", "Time this session: " .. stats.session)
     SetText("levelInText", string.format("Leveling in: %s (%s XP/Hour)", stats.toLevel, stats.hourly))
@@ -648,9 +635,13 @@ local function RenderText(force)
     end
     shown.fill, shown.quest, shown.level, shown.max = fill, quest, A.level, A.maxXP
 
+    -- The default bar has the time this level on its left, or nothing.
     for _, v in ipairs(views) do
-        local timed = v.skinned and (db.showLevelTime or v.preview) and levelTimeText
-        v.levelText:SetText(timed or ("Level " .. A.level))
+        if v.skinned then
+            v.levelText:SetText((db.defaultLevelTime or v.preview) and levelTimeText or "")
+        else
+            v.levelText:SetText("Level " .. A.level)
+        end
     end
     if maxed then
         SetText("xpText", "Max Level")
@@ -680,9 +671,19 @@ local function RenderView(v)
     local back = v.liquid:Back()
     Place(v.leadTex, fillW, (A.lead - A.fill) * w, back)
 
-    -- Overlays sit after the fill and clip at the bar end.
-    local questW = min(A.quest, 1 - A.fill) * w
-    local restedW = min(A.rested, max(0, 1 - A.fill - A.quest)) * w
+    -- Overlays sit after the fill and clip at the bar end. Each bar can leave either out (previews
+    -- show both); without the quest segment the rested one starts at the fill.
+    local showQuest, showRested = true, true
+    if not v.preview then
+        if v.skinned then
+            showQuest, showRested = db.defaultQuestBar, db.defaultRestedBar
+        else
+            showQuest, showRested = db.questBar, db.restedBar
+        end
+    end
+    local quest = showQuest and A.quest or 0
+    local questW = min(quest, 1 - A.fill) * w
+    local restedW = showRested and min(A.rested, max(0, 1 - A.fill - quest)) * w or 0
     Place(v.questTex, fillW, questW, back)
     Place(v.restedTex, fillW + questW, restedW, questW < 0.5 and back or nil)
 
@@ -932,17 +933,12 @@ local function OnViewResized(v, w, h)
     v.liquid:SetSize(w, h)
     v.liquid:Snap(A.fill * w)
     ApplyTextSize(v)
-    ApplySegments(v)
     ApplyRounding(v)
     RenderBar()
 end
 
 local function ApplyTextAll()
     for _, v in ipairs(views) do ApplyTextSize(v) end
-end
-
-local function ApplySegmentsAll()
-    for _, v in ipairs(views) do ApplySegments(v) end
 end
 
 local function ApplySize()
@@ -995,7 +991,7 @@ end
 
 -- Drawn over the default bar, the bar lives inside it, so hiding it would hide ours too.
 local function HideWanted()
-    return db.hideBlizzardBar and not db.skinDefaultBar
+    return db.hideBlizzardBar and not SkinWanted()
 end
 
 local function ApplyBlizzardBar()
@@ -1028,7 +1024,7 @@ local function ApplyBlizzardBar()
     end
 end
 
--- Use Default Experience Bar: the skin view, drawn over the game's own XP bar. The game's frames are
+-- The default experience bar: the skin view, drawn over the game's own XP bar. The game's frames are
 -- only read, never changed: the view's frame becomes a child of the XP bar, so it shows, hides, moves
 -- and scales with it (Edit Mode included), and covers its fill from a higher frame level.
 
@@ -1116,6 +1112,7 @@ local function TooltipRow(label, value)
 end
 
 local function ShowSkinTooltip(frame)
+    if not db.defaultTooltip then return end
     GameTooltip:SetOwner(frame, "ANCHOR_TOP")
     GameTooltip:AddLine("Level " .. T.level, 1, 1, 1)
     if maxed then
@@ -1173,8 +1170,59 @@ local function SkinView()
     return skin
 end
 
+-- The game's own text on its XP bar: Forever shows it with Status Text set to always show (and on
+-- hover), Era and Anniversary with Always Show XP Text, and it then sits under the default bar's XP as
+-- a second copy. Faded out while the default bar shows its XP, and back as it was otherwise. The
+-- game's XP text is known by where it is (Forever's OverlayFrame.Text, the bar's TextString, Era's
+-- MainMenuBarExpText on another frame). Any other text under the XP bar, in case Forever keeps it
+-- elsewhere, is faded only while it reads like XP numbers ("3,582 / 27,216"), so other addons' text
+-- there is left alone. Only alpha is changed, which the game does not use for these.
+local gameTexts, mutedTexts = {}, {} -- gameTexts: { fs, known }
+
+local function FindGameTexts(target)
+    local list, seen = {}, {}
+    local function add(fs, known)
+        if type(fs) == "table" and fs.GetObjectType and fs:GetObjectType() == "FontString" and not seen[fs] then
+            seen[fs] = true
+            list[#list + 1] = { fs = fs, known = known }
+        end
+    end
+    add(target.OverlayFrame and target.OverlayFrame.Text, true)
+    add(target.TextString, true)
+    if target == MainMenuExpBar then add(MainMenuBarExpText, true) end
+    local function visit(f, depth)
+        if f == skin.frame or depth > 3 then return end
+        for _, r in ipairs({ f:GetRegions() }) do add(r, false) end
+        for _, child in ipairs({ f:GetChildren() }) do visit(child, depth + 1) end
+    end
+    visit(target, 0)
+    return list
+end
+
+-- XP numbers: digits, a slash, digits. A secret text (Forever, XP in combat) can only be the XP.
+local function LooksLikeXP(fs)
+    local text = fs:GetText()
+    if Secret(text) then return true end
+    return type(text) == "string" and text:find("%d%s*/%s*%d") ~= nil
+end
+
+local function MuteGameTexts(on)
+    for _, entry in ipairs(gameTexts) do
+        local fs = entry.fs
+        if on and (entry.known or LooksLikeXP(fs)) then
+            if mutedTexts[fs] == nil then mutedTexts[fs] = fs:GetAlpha() end
+            if fs:GetAlpha() ~= 0 then fs:SetAlpha(0) end
+        elseif mutedTexts[fs] ~= nil then
+            fs:SetAlpha(mutedTexts[fs])
+            mutedTexts[fs] = nil
+        end
+    end
+end
+
 local function Unskin()
     if not skinTarget then return end
+    MuteGameTexts(false)
+    gameTexts = {}
     skinTarget, skinFill = nil, nil
     skin.frame:Hide()
     skin.frame:ClearAllPoints()
@@ -1185,7 +1233,7 @@ end
 -- follows the game swapping or resizing its XP bar. verbose reports the outcome in chat.
 local function ApplySkin(verbose)
     ApplyBlizzardBar()
-    if not db.skinDefaultBar then
+    if not SkinWanted() then
         Unskin()
         ShowViews()
         return
@@ -1206,6 +1254,8 @@ local function ApplySkin(verbose)
     local frame = v.frame
     local textStrata, textLevel, root
     if target ~= skinTarget or fill ~= skinFill then
+        MuteGameTexts(false)
+        gameTexts = FindGameTexts(target)
         skinTarget, skinFill = target, fill
         frame:SetParent(target)
         frame:SetFrameStrata(fill:GetFrameStrata())
@@ -1219,6 +1269,8 @@ local function ApplySkin(verbose)
         ShowViews()
     end
     if w ~= v.width or h ~= v.height then frame:SetSize(w, h) end
+    -- Every second too, in case the game shows its text again some other way.
+    MuteGameTexts(db.defaultXPText)
     if root then
         RenderBar()
         UpdateSessionTexts()
@@ -1319,15 +1371,31 @@ local SETTING_APPLY = {
     locked = ApplyLock,
     showMaxLevel = function() Refresh() end,
     hideBlizzardBar = ApplyBlizzardBar,
-    showBar = function() ShowViews(); RenderBar(); UpdateSessionTexts() end,
-    skinDefaultBar = function() ApplySkin(db.skinDefaultBar) end,
-    showLevelTime = function() UpdateSessionTexts(); RenderText(true) end,
+    -- Says in chat where the default bar is drawn, or why it is not, when it is newly turned on.
+    bars = function()
+        ApplySkin(SkinWanted() and not skinTarget)
+        ShowViews()
+        RenderBar()
+        UpdateSessionTexts()
+    end,
+    defaultLevelTime = function() UpdateSessionTexts(); RenderText(true) end,
+    defaultXPText = function()
+        UpdateSessionTexts()
+        if skinTarget then MuteGameTexts(db.defaultXPText) end
+    end,
+    defaultQuestBar = RenderBar,
+    defaultRestedBar = RenderBar,
+    questBar = RenderBar,
+    restedBar = RenderBar,
+    defaultTooltip = function()
+        if skin and GameTooltip:IsOwned(skin.frame) then GameTooltip:Hide() end
+    end,
+    showLevelTime = UpdateSessionTexts,
     showSessionTime = UpdateSessionTexts,
     showXPHour = UpdateSessionTexts,
     showQuestRested = UpdateSessionTexts,
     font = ApplyTextAll,
     fontOutline = ApplyTextAll,
-    segments = ApplySegmentsAll,
     waves = ApplyLiquidOptions,
     bubbles = ApplyLiquidOptions,
     sparkles = ApplyLiquidOptions,
@@ -1484,10 +1552,11 @@ function Core.SetSetting(key, value)
 end
 
 -- A live bar for a preview, on parent: look "bar" is the separate bar, "skin" the bar over the game's
--- own. It shows the same XP as the real bars (the wizard plays /seb test gains on them).
-function Core.NewPreview(parent, look)
+-- own, at width x height if given. It shows the same XP as the real bars (the wizard plays /seb test
+-- gains on them).
+function Core.NewPreview(parent, look, width, height)
     local skinned = look == "skin"
-    local w, h = skinned and 571 or 600, skinned and 13 or 30
+    local w, h = width or (skinned and 571 or 600), height or (skinned and 13 or 30)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(w, h)
     local v = NewView(frame, w, h, skinned)
@@ -1499,7 +1568,6 @@ function Core.NewPreview(parent, look)
     ApplyTheme()
     ApplyRounding(v)
     ApplyTextSize(v)
-    ApplySegments(v)
     UpdateSessionTexts()
     RenderText(true)
     return v
@@ -1548,6 +1616,20 @@ local function QueueQuestScan()
     end)
 end
 
+-- Up to 1.3 the bars were two checkboxes, Show Separate Bar and Use Default Experience Bar, and the
+-- default bar's time this level followed the separate bar's Time This Level. Neither bar ticked
+-- showed nothing; it becomes the separate bar.
+local function MigrateBars(profile)
+    if profile.bars == nil and profile.skinDefaultBar then
+        profile.bars = profile.showBar == false and "default" or "both"
+    end
+    if profile.defaultLevelTime == nil and profile.skinDefaultBar ~= nil then
+        profile.defaultLevelTime = profile.showLevelTime
+    end
+    profile.showBar, profile.skinDefaultBar = nil, nil
+    profile.segments = nil -- Segmented Bar, removed in 1.4
+end
+
 bar:SetScript("OnEvent", function(self, event, arg1, arg2)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
@@ -1561,6 +1643,8 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
             SmoothExperienceBarDB = root
         end
         profiles = root.profiles
+        for _, profile in pairs(profiles) do MigrateBars(profile) end
+        if root.legacy then MigrateBars(root.legacy) end
         local oldKey
         profileKey, oldKey = CharacterKeys()
         local newToAddon = not next(profiles) and not root.legacy
@@ -1602,6 +1686,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
             if db[k] == nil then db[k] = CopyValue(v) end
         end
         if not ns.Themes.list[db.theme] then db.theme = DEFAULTS.theme end
+        if db.bars ~= "default" and db.bars ~= "both" then db.bars = "separate" end
         main.liquid:SetOptions(db)
         ApplyTheme()
         ApplyRounding(main)
@@ -1690,7 +1775,7 @@ C_Timer.NewTicker(1, function()
     -- Catch up on XP that changed while its values were secret.
     if xpPending then CountGainedXP() end
     if refreshPending then Refresh() end
-    if db.skinDefaultBar then ApplySkin() end
+    if SkinWanted() then ApplySkin() end
     -- Keep an open tooltip's times and XP current.
     if skin and GameTooltip:IsShown() and GameTooltip:IsOwned(skin.frame) then ShowSkinTooltip(skin.frame) end
     if bar:IsShown() or (skin and skin.frame:IsShown()) then UpdateSessionTexts() end
@@ -1711,7 +1796,7 @@ local HELP = {
     "/seb test quest - add completed quest XP, /seb test turnin to hand it in",
     "/seb test rested - add rested XP",
     "/seb test off - back to live data",
-    "/seb skin - use the game's own experience bar, or a separate bar again",
+    "/seb skin - show the liquid in the game's own experience bar too, or the separate bar only again",
     "/seb setup - open the setup wizard",
 }
 
@@ -1739,9 +1824,8 @@ SlashCmdList.SMOOTHEXPERIENCEBAR = function(input)
     elseif cmd == "setup" then
         if ns.Wizard then ns.Wizard.Open() end
     elseif cmd == "skin" then
-        db.skinDefaultBar = not db.skinDefaultBar
-        ApplySkin(db.skinDefaultBar)
-        if not db.skinDefaultBar then Print("Back to a separate bar.") end
+        Core.SetSetting("bars", SkinWanted() and "separate" or "both")
+        if not SkinWanted() then Print("Back to a separate bar.") end
     else
         for _, line in ipairs(HELP) do Print(line) end
     end

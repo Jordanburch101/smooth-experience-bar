@@ -596,6 +596,75 @@ def make_icon(path):
     write_tga(path, 64, 64, lambda x, y: tuple(c / 255 for c in px[x, y]))
 
 
+def make_action_bars(path, w=1024, h=128):
+    """The game's action bars for the setup wizard's placement scene, from an in-game screenshot of
+    Forever's (branding/action-bars.png): both gryphons, a row of buttons over the experience bar and
+    the action bar under it, with the world behind made transparent and the micro menu and a few
+    buttons cut from the middle so the bars fit the wizard at a size that still reads. The experience
+    bar is emptied, for the wizard to draw the game's fill or the liquid in it. Needs Pillow and numpy
+    (skipped without them).
+
+    Stored 1024 x 124 at the top of a 1024 x 128 texture; ACTION_BARS in Wizard.lua has the composite's
+    size (1187 x 144) and where its experience bar is.
+    """
+    try:
+        import numpy as np
+        from PIL import Image, ImageDraw, ImageFilter
+    except ImportError:
+        print("Pillow or numpy not installed, ActionBars.tga not regenerated")
+        return
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "branding", "action-bars.png")
+    a = np.asarray(Image.open(src).convert("RGB")).astype(np.float32)
+    sh, sw = a.shape[:2]
+    top = 64                           # below the buff icons
+    cut = 597                          # columns taken out of the middle
+    seam_top, seam_bottom, band = 630, 620, 124  # where the halves meet, above and below row band
+
+    # Empty the experience bar (x 170-1589, y 131-143): its frame and inside, row by row as where it
+    # is empty (the median leaves out the segment lines), over the text that spills onto the frame.
+    # The left end is the clean right end mirrored.
+    clean = np.median(a[126:148, 1340:1580], axis=1)
+    a[126:148, 180:1561] = clean[:, None, :]
+    a[126:148, 167:180] = a[126:148, 1759 - 179:1759 - 166][:, ::-1]
+
+    alpha = np.zeros((sh, sw), np.float32)
+    alpha[127:, 165:1591] = 1          # the bar frame and the action bar under it
+    # The top row's buttons, found by their borders along row 70.
+    lum = a[70].mean(1)
+    x = 0
+    while x < sw:
+        if lum[x] > 60:
+            start = x
+            while x < sw and lum[x] > 60:
+                x += 1
+            if x - start > 30:
+                alpha[69:122, start - 1:x + 1] = 1
+        x += 1
+    # The gryphons, and the page arrows over the left one: the warm, lit pixels at either end, gaps
+    # closed, holes filled (whatever the outside cannot reach), edges softened by a pixel.
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    ends = np.zeros((sh, sw), bool)
+    ends[top:, :205] = True
+    ends[top:, 1555:] = True
+    warm = (r >= g) & (r - b >= 14) & (r >= 34) & ends
+    mask = Image.fromarray((warm * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3))
+    for seed in ((0, sh - 1), (0, top), (sw - 1, top)):
+        ImageDraw.floodfill(mask, seed, 128)
+    inside = Image.fromarray(((np.asarray(mask) != 128) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.6))
+    alpha = np.maximum(alpha, np.where(ends, np.asarray(inside).astype(np.float32) / 255, 0))
+
+    rgba = np.dstack([a, alpha * 255]).astype(np.uint8)[top:]
+    band -= top
+    comp = np.zeros((rgba.shape[0], sw - cut, 4), np.uint8)
+    comp[:band, :seam_top] = rgba[:band, :seam_top]
+    comp[:band, seam_top:] = rgba[:band, seam_top + cut:]
+    comp[band:, :seam_bottom] = rgba[band:, :seam_bottom]
+    comp[band:, seam_bottom:] = rgba[band:, seam_bottom + cut:]
+    im = Image.fromarray(comp, "RGBA").resize((w, 124), Image.LANCZOS)
+    px = im.load()
+    write_tga(path, w, h, lambda x, y: tuple(c / 255 for c in px[x, y]) if y < 124 else (0, 0, 0, 0))
+
+
 def make_grip(path, size=16):
     """Resize grip: three diagonal ridges in the bottom-right corner."""
 
@@ -643,6 +712,7 @@ def main():
     make_crystal(os.path.join(out, "Crystal.tga"))
     make_grip(os.path.join(out, "Grip.tga"))
     make_icon(os.path.join(out, "Icon.tga"))
+    make_action_bars(os.path.join(out, "ActionBars.tga"))
     print("wrote", sorted(os.listdir(out)))
 
 
