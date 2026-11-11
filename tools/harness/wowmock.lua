@@ -80,7 +80,7 @@ function Region:GetVerticalScroll() return self.vscroll or 0 end
 function Region:SetVerticalScroll(v) self.vscroll = v end
 function Region:GetVerticalScrollRange() return 0 end
 function Region:SetAlpha(a) self.alpha = a end
-function Region:GetAlpha() return self.alpha end
+function Region:GetAlpha() return self.alpha or 1 end
 function Region:SetScale(s) self.scale = s end
 local STRATA = { BACKGROUND = true, LOW = true, MEDIUM = true, HIGH = true, DIALOG = true,
                  FULLSCREEN = true, FULLSCREEN_DIALOG = true, TOOLTIP = true }

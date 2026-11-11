@@ -6,6 +6,15 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.5.0
+
+### New
+- Fade When Idle: the separate bar can fade away while you are just
+  roaming around. Hover over it to reveal it; it also comes back when you
+  gain XP, then fades again. Fade After sets how many
+  seconds it waits first (10 to start with), and Faded Opacity how
+  visible it stays: 0% hides it until you hover, or keep it faintly there.
+
 ## 1.4.0
 
 ### New

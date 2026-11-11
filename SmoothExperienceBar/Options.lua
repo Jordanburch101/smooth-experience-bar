@@ -222,6 +222,12 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("questBar", "Completed Quest Bar", "The XP of quests ready to turn in, shown after your XP in the bar.")
     Checkbox("restedBar", "Rested Bar", "Your rested XP, shown after your XP (and completed quests) in the bar.")
     Checkbox("rounding", "Rounded Liquid", "Shade the top and bottom of the bar so the liquid looks round.")
+    Checkbox("fadeIdle", "Fade When Idle", "Fade the bar after a while. Hover over it to reveal it; it also "
+        .. "comes back when you gain XP, in or out of combat.")
+    Slider("fadeDelay", "Fade After", "Seconds since the last XP gain or hover before the bar fades.",
+        2, 30, 1, "%ds")
+    Slider("fadeOpacity", "Faded Opacity", "How visible the bar stays once faded. 0% hides it until you hover over it.",
+        0, 90, 5, "%d%%")
     Checkbox("hideBlizzardBar", "Hide Default Experience Bar", "Hide the game's own experience bar.", SeparateOnly)
     Button("Reset Position & Size", "Reset", Core.ResetPosition, "Move the bar back to the top of the screen at its default size.")
 

@@ -45,6 +45,9 @@ local DEFAULTS = {
     locked = true,
     showMaxLevel = false,
     hideBlizzardBar = false,
+    fadeIdle = false,        -- the separate bar fades after a while, back on hover and XP gains
+    fadeDelay = 10,          -- seconds before it fades
+    fadeOpacity = 0,         -- percent it fades to (0: gone until hovered)
     -- Which bars show: "separate" (the bar you move and resize), "default" (the one drawn over the
     -- game's own XP bar) or "both".
     bars = "separate",
@@ -265,6 +268,48 @@ local function SkinWanted() return db.bars ~= "separate" end
 local function ShowViews()
     bar:SetShown(barsWanted and SeparateWanted())
     if skin then skin.frame:SetShown(barsWanted and skinTarget ~= nil) end
+end
+
+-- Fade When Idle: the separate bar fades to fadeOpacity fadeDelay seconds after a hover or an XP
+-- gain, and comes back to full for each of them. Combat alone does not bring it back. Only its alpha changes, so it still takes the mouse while
+-- faded. Never while unlocked. The fader's OnUpdate runs only while it counts down or fades.
+local FADE_OUT, FADE_IN = 1.5, 0.25 -- seconds
+local fade = { alpha = 1, wait = 0 }
+local hovered = false
+local fader = CreateFrame("Frame")
+fader:Hide()
+
+local function FadeWanted()
+    return db.fadeIdle and db.locked and not hovered
+end
+
+-- Show the bar now and start the countdown again.
+local function WakeBar()
+    fade.wait = db.fadeDelay
+    fader:Show()
+end
+
+fader:SetScript("OnUpdate", function(self, dt)
+    local wanted, target = FadeWanted(), 1
+    local settled = not wanted
+    if wanted then
+        fade.wait = fade.wait - dt
+        if fade.wait <= 0 then
+            target, settled = min(1, max(0, db.fadeOpacity / 100)), true
+        end
+    end
+    if fade.alpha < target then
+        fade.alpha = min(target, fade.alpha + dt / FADE_IN)
+    elseif fade.alpha > target then
+        fade.alpha = max(target, fade.alpha - dt / FADE_OUT)
+    end
+    bar:SetAlpha(fade.alpha)
+    if fade.alpha == target and settled then self:Hide() end
+end)
+
+-- A view to draw: shown, and not the separate bar faded all the way out.
+local function InSight(v)
+    return v.frame:IsVisible() and not (v == main and fade.alpha == 0)
 end
 
 -- Shown while unlocked: an outline and a corner grip for resizing.
@@ -701,7 +746,7 @@ end
 -- Views out of sight are skipped; they catch up on the next frame they are seen.
 local function RenderBar()
     for _, v in ipairs(views) do
-        if v.frame:IsVisible() then RenderView(v) end
+        if InSight(v) then RenderView(v) end
     end
     RenderText()
 end
@@ -771,7 +816,7 @@ end
 local function OnUpdate(self, elapsed)
     local seen, quiet = false, true
     for _, v in ipairs(views) do
-        if v.frame:IsVisible() then
+        if InSight(v) then
             seen = true
             quiet = quiet and v.liquid:IsQuiet()
         end
@@ -787,7 +832,7 @@ local function OnUpdate(self, elapsed)
 
     if animating then StepFill(dt) end
     for _, v in ipairs(views) do
-        if v.frame:IsVisible() then v.liquid:Update(dt, A.fill * v.width) end
+        if InSight(v) then v.liquid:Update(dt, A.fill * v.width) end
     end
     RenderBar()
 end
@@ -851,6 +896,7 @@ local function Refresh()
     end
 
     if gained > 0 then
+        WakeBar()
         -- sqrt so a single mob kill still ripples, while a big turn-in gets the full splash.
         local intensity = min(1, (gained / mx / ANIM.bigGain) ^ 0.5)
         for _, v in ipairs(views) do
@@ -921,6 +967,7 @@ end
 local function ApplyLock()
     unlockFrame:SetShown(not db.locked)
     if db.locked then GameTooltip:Hide() end
+    WakeBar()
 end
 
 local function ApplyScale()
@@ -1320,6 +1367,8 @@ bar:SetScript("OnMouseUp", function(_, button)
 end)
 
 bar:SetScript("OnEnter", function(self)
+    hovered = true
+    fader:Show()
     if db.locked then return end
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
     GameTooltip:AddLine("Smooth Experience Bar")
@@ -1329,7 +1378,11 @@ bar:SetScript("OnEnter", function(self)
     GameTooltip:Show()
 end)
 
-bar:SetScript("OnLeave", function() GameTooltip:Hide() end)
+bar:SetScript("OnLeave", function()
+    hovered = false
+    WakeBar()
+    GameTooltip:Hide()
+end)
 
 -- Theme picker hover: the menu reports which option the mouse enters but not when it closes, so
 -- watch for the close and go back to the saved theme if nothing was picked.
@@ -1350,6 +1403,7 @@ end
 function Core.PreviewTheme(key)
     if not (Menu and Menu.GetManager) or not ns.Themes.list[key] then return end
     previewTheme = key ~= db.theme and key or nil
+    WakeBar()
     ApplyTheme()
     RenderText(true)
     if not previewWatch then
@@ -1405,9 +1459,11 @@ local SETTING_APPLY = {
     rounding = ApplyRoundingAll,
 }
 
+-- Any change shows a faded bar again, so the change can be seen.
 function Core.OnSettingChanged(key)
     local apply = SETTING_APPLY[key]
     if apply then apply() end
+    WakeBar()
 end
 
 local function CopyValue(v)
@@ -1711,6 +1767,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
             ResetSession()
         end
         if ns.Themes.Get(db.theme).Resolve then ApplyTheme() end
+        WakeBar()
         ApplySkin()
         if isLogin or isReload then
             RequestPlayed()

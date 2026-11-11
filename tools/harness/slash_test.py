@@ -175,7 +175,7 @@ check(category.name == "Smooth Experience Bar" and category.frame is not None, "
 check(any(i.kind == "dropdown" and i.key == "theme" for i in items), "theme dropdown")
 check(sum(1 for i in items if i.kind == "button") == 8, "eight buttons")
 setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n = n + 1 end return n end")()
-check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 34,
+check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 37,
       "a row for every setting")
 # Each bar has its own section, shown only while that bar is used.
 shown_rows = lambda: {i.key or i.name for i in G.__settingsRows().values() if i.frame.shown}
@@ -243,7 +243,7 @@ for cmd in ["unlock", "lock", "reset", "session"]:
 print("== every setting toggled off and back on")
 for key in ["showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
             "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "fontOutline", "locked", "hideBlizzardBar", "defaultLevelTime", "defaultXPText", "defaultTooltip", "questBar", "restedBar", "defaultQuestBar",
-            "defaultRestedBar", "resetOnReload", "showMaxLevel"]:
+            "defaultRestedBar", "resetOnReload", "showMaxLevel", "fadeIdle"]:
     default = G.__settings[key].GetValue(G.__settings[key])
     lua.execute(f"__settings[{key!r}]:SetValue({str(not default).lower()})")
     step(f"{key}={not default}", "SlashCmdList.SMOOTHEXPERIENCEBAR('test')", 1)
@@ -662,6 +662,55 @@ check("1,500 / 311,490" in step("rested secret", "__fire('PLAYER_XP_UPDATE', 'pl
       "secret rested XP alone does not stop the bar")
 lua.execute("__player.secretRested = false")
 step("secret turn-in reward", "__fire('QUEST_TURNED_IN', 11, __secret(), 0)", 1)  # must not error
+
+print("== fade when idle")
+alpha = lambda: G.SmoothExperienceBarFrame.GetAlpha(G.SmoothExperienceBarFrame)
+lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('test off'); __settings.bars:SetValue('separate'); __settings.locked:SetValue(true)")
+lua.execute("SmoothExperienceBarFrame.scripts.OnLeave(SmoothExperienceBarFrame)")  # earlier tests hovered it
+run(1)
+check(alpha() == 1, "fade: off by default, the bar stays")
+lua.execute("__settings.fadeDelay:SetValue(5); __settings.fadeIdle:SetValue(true)")
+run(4)
+check(alpha() == 1, "fade: still shown before the delay")
+run(3)
+check(alpha() == 0 and G.SmoothExperienceBarFrame.mouse, "fade: gone after the delay, still takes the mouse")
+lua.execute("SmoothExperienceBarFrame.scripts.OnEnter(SmoothExperienceBarFrame)")
+run(0.5)
+check(alpha() == 1, "fade: back while hovered")
+run(10)
+check(alpha() == 1, "fade: stays while hovered")
+lua.execute("SmoothExperienceBarFrame.scripts.OnLeave(SmoothExperienceBarFrame)")
+run(7)
+check(alpha() == 0, "fade: fades again after the mouse leaves")
+lua.execute("__combat = true; __fire('PLAYER_REGEN_DISABLED')")
+run(1)
+check(alpha() == 0, "fade: combat alone does not bring it back")
+lua.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
+run(1)
+check(alpha() == 0, "fade: nor does combat ending")
+t = step("faded XP gain", "SlashCmdList.SMOOTHEXPERIENCEBAR('test')", 1); check("Level" in t and alpha() == 1,
+      "fade: an XP gain shows the bar, which kept up while faded")
+run(7)
+check(alpha() == 0, "fade: and fades again")
+lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('unlock')")
+run(10)
+check(alpha() == 1, "fade: never while unlocked")
+lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('lock'); __settings.fadeOpacity:SetValue(30)")
+run(7)
+check(abs(alpha() - 0.3) < 1e-9, f"fade: down to the faded opacity ({alpha()})")
+check("Level" in step("dimmed", None, 0.5), "fade: a dimmed bar keeps drawing")
+lua.execute("SmoothExperienceBarFrame.scripts.OnEnter(SmoothExperienceBarFrame)")
+run(0.5)
+check(alpha() == 1, "fade: hovering a dimmed bar reveals it fully")
+lua.execute("SmoothExperienceBarFrame.scripts.OnLeave(SmoothExperienceBarFrame)")
+run(7)
+check(abs(alpha() - 0.3) < 1e-9, "fade: dims again after the mouse leaves")
+lua.execute("__settings.fadeIdle:SetValue(false)")
+run(10)
+check(alpha() == 1, "fade: turned off, the bar stays")
+lua.execute("__settings.fadeDelay:SetValue(ns_defaults.fadeDelay); __settings.fadeOpacity:SetValue(ns_defaults.fadeOpacity); "
+            "SlashCmdList.SMOOTHEXPERIENCEBAR('test off')")
+run(1)
 
 print("== max level")
 lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('test off'); __player.level = 70; __player.xp = 0")
