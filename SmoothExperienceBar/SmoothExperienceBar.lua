@@ -18,6 +18,7 @@ local FONT = (GameFontNormal and GameFontNormal:GetFont()) or "Fonts\\FRIZQT__.T
 -- Objects that share a file are offered once, under the file's name.
 local FONT_OBJECTS = { "GameFontNormal", "NumberFontNormal", "ChatFontNormal", "QuestTitleFont", "NumberFont_Outline_Huge" }
 local FONT_NAMES = { FRIZQT__ = "Friz Quadrata", ARIALN = "Arial Narrow", MORPHEUS = "Morpheus", SKURRI = "Skurri" }
+local SEGMENTS = 20 -- Segmented Bar: as many as the game's experience bar has
 local LAYOUT_VERSION = 2 -- bump to reset saved positions when the layout changes
 
 local ANIM = {
@@ -80,6 +81,7 @@ local DEFAULTS = {
     restedGlow = false,
     glass = false,
     rounding = false,
+    segments = false, -- lines dividing the separate bar
     flash = true,
 }
 
@@ -192,6 +194,18 @@ local function NewView(frame, width, height, skinned)
         v.roundR:SetPoint("BOTTOMRIGHT")
     end
 
+    -- Segmented Bar: lines over the liquid and under the glass, on the separate bar only; the game's
+    -- own bar has its lines already.
+    if not skinned then
+        v.segments = {}
+        for i = 1, SEGMENTS - 1 do
+            local line = frame:CreateTexture(nil, "ARTWORK", nil, 7)
+            line:SetColorTexture(0, 0, 0, 0.55)
+            line:Hide()
+            v.segments[i] = line
+        end
+    end
+
     v.flash = frame:CreateTexture(nil, "OVERLAY", nil, 2)
     v.flash:SetAllPoints()
     v.flash:SetColorTexture(1, 1, 1, 1)
@@ -243,6 +257,19 @@ local function ApplyTextSize(v)
     end
 end
 
+local function ApplySegments(v)
+    if not v.segments then return end
+    for i, line in ipairs(v.segments) do
+        if db.segments then
+            local x = floor(v.width * i / SEGMENTS + 0.5)
+            line:SetPoint("TOPLEFT", x, 0)
+            line:SetPoint("BOTTOMLEFT", x, 0)
+            line:SetWidth(1)
+        end
+        line:SetShown(db.segments)
+    end
+end
+
 local bar = CreateFrame("Frame", "SmoothExperienceBarFrame", UIParent)
 bar:SetSize(barWidth, barHeight)
 bar:SetScale(DEFAULTS.scale)
@@ -258,6 +285,7 @@ bar:RegisterForDrag("LeftButton")
 
 main = NewView(bar, barWidth, barHeight, false)
 ApplyTextSize(main)
+ApplySegments(main)
 
 -- Hidden at max level (unless kept there); each view also has its own setting.
 local barsWanted = true
@@ -980,12 +1008,17 @@ local function OnViewResized(v, w, h)
     v.liquid:SetSize(w, h)
     v.liquid:Snap(A.fill * w)
     ApplyTextSize(v)
+    ApplySegments(v)
     ApplyRounding(v)
     RenderBar()
 end
 
 local function ApplyTextAll()
     for _, v in ipairs(views) do ApplyTextSize(v) end
+end
+
+local function ApplySegmentsAll()
+    for _, v in ipairs(views) do ApplySegments(v) end
 end
 
 local function ApplySize()
@@ -1457,6 +1490,7 @@ local SETTING_APPLY = {
     lightning = ApplyLiquidOptions,
     glass = ApplyLiquidOptions,
     rounding = ApplyRoundingAll,
+    segments = ApplySegmentsAll,
 }
 
 -- Any change shows a faded bar again, so the change can be seen.
@@ -1624,6 +1658,7 @@ function Core.NewPreview(parent, look, width, height)
     ApplyTheme()
     ApplyRounding(v)
     ApplyTextSize(v)
+    ApplySegments(v)
     UpdateSessionTexts()
     RenderText(true)
     return v
@@ -1683,7 +1718,6 @@ local function MigrateBars(profile)
         profile.defaultLevelTime = profile.showLevelTime
     end
     profile.showBar, profile.skinDefaultBar = nil, nil
-    profile.segments = nil -- Segmented Bar, removed in 1.4
 end
 
 bar:SetScript("OnEvent", function(self, event, arg1, arg2)

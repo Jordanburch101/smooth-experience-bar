@@ -222,6 +222,7 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("questBar", "Completed Quest Bar", "The XP of quests ready to turn in, shown after your XP in the bar.")
     Checkbox("restedBar", "Rested Bar", "Your rested XP, shown after your XP (and completed quests) in the bar.")
     Checkbox("rounding", "Rounded Liquid", "Shade the top and bottom of the bar so the liquid looks round.")
+    Checkbox("segments", "Segmented Bar", "Divide the bar into 20 segments, like the game's experience bar.")
     Checkbox("fadeIdle", "Fade When Idle", "Fade the bar after a while. Hover over it to reveal it; it also "
         .. "comes back when you gain XP, in or out of combat.")
     Slider("fadeDelay", "Fade After", "Seconds since the last XP gain or hover before the bar fades.",

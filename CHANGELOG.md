@@ -6,6 +6,13 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.5.1
+
+### Fixed
+- Segmented Bar is back: tick it in the Separate Bar section to divide
+  the bar into 20 segments, like the game's experience bar. It was taken
+  out in 1.4.0, so tick it again if you had it on.
+
 ## 1.5.0
 
 ### New
