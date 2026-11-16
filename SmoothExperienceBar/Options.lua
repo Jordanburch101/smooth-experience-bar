@@ -120,6 +120,14 @@ local function FontOptions()
     return container:GetData()
 end
 
+local function SlotOptions()
+    local container = Settings.CreateControlTextContainer()
+    for _, slot in ipairs(ns.Core.SkinSlots()) do
+        container:Add(slot.key, slot.name)
+    end
+    return container:GetData()
+end
+
 -- The page frame: the title and divider the game's list draws above its rows, and a scroll frame
 -- for the rows where the list would be. The game parents and shows it when the category opens.
 local function BuildPage(title)
@@ -234,10 +242,13 @@ function Options.Register(savedDB, defaultValues)
     Button("Reset Position & Size", "Reset", Core.ResetPosition, "Move the bar back to the top of the screen at its default size.")
 
     Header("Default Experience Bar", DefaultUsed)
-    Checkbox("defaultLevelTime", "Time This Level",
-        "Played time at this level on the left of the bar (total played at max level). Untick for no text there.")
-    Checkbox("defaultXPText", "XP", "Current and max XP, and the XP still to go, in the middle of the bar. "
-        .. "While it shows, the game's own XP text there is hidden so it does not show twice.")
+    local slotHelp = " Time This Level, Time to Level and XP/Hour come from your played time and this session's XP."
+    Dropdown(Register("defaultLeft", "Left Text"), "What shows on the left of the bar." .. slotHelp, SlotOptions)
+    Dropdown(Register("defaultCentre", "Centre Text"), "What shows in the middle of the bar. While anything shows "
+        .. "there, the game's own XP text is hidden so the two do not overlap." .. slotHelp, SlotOptions)
+    Dropdown(Register("defaultRight", "Right Text"), "What shows on the right of the bar." .. slotHelp, SlotOptions)
+    Checkbox("defaultLabels", "Text Labels", "Name each number, as in \"Time this level: 2h 13m\". "
+        .. "Untick for just the numbers (XP/hour keeps a short /h).")
     Checkbox("defaultQuestBar", "Completed Quest Bar", "The XP of quests ready to turn in, shown after your XP in the bar.")
     Checkbox("defaultRestedBar", "Rested Bar", "Your rested XP, shown after your XP (and completed quests) in the bar.")
     Checkbox("defaultTooltip", "Tooltip",

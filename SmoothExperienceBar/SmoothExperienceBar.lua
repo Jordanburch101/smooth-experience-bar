@@ -54,8 +54,11 @@ local DEFAULTS = {
     bars = "separate",
 
     -- The default bar's own settings; the separate bar's lines are the show* below.
-    defaultLevelTime = true, -- the time this level on its left (nothing there when off)
-    defaultXPText = true,
+    -- What shows on its left, in the middle and on its right: a key from SKIN_SLOTS.
+    defaultLeft = "levelTime",
+    defaultCentre = "xp",
+    defaultRight = "none",
+    defaultLabels = true,    -- "Time this level: 2h 13m", or just "2h 13m"
     defaultTooltip = true,
     defaultQuestBar = true,  -- the completed quest XP segment after the fill
     defaultRestedBar = true, -- the rested XP segment
@@ -229,9 +232,6 @@ local function NewView(frame, width, height, skinned)
         v.texts[#v.texts + 1] = { fs = fs, spec = spec }
         v[spec.name] = fs
     end
-    -- Over the default bar the time this level takes the level's place and there is no percentage.
-    if skinned then v.pctText:Hide() end
-
     views[#views + 1] = v
     return v
 end
@@ -617,9 +617,8 @@ local function SetText(name, text)
     for _, v in ipairs(views) do v[name]:SetText(text) end
 end
 
--- "Time this level" (time played at max level): a line above the separate bar, and the skin view's
--- left text in place of the level.
-local levelTimeText
+-- The default bar's three texts, set after the animation state below.
+local RenderSkinTexts
 
 -- Time this level, time played, session time, XP/hour and the time to level, for the lines around the
 -- separate bar and the default bar's tooltip.
@@ -655,16 +654,13 @@ local function UpdateSessionTexts()
         v.sessionTime:SetShown(around and (all or db.showSessionTime))
         v.levelInText:SetShown(around and (all or db.showXPHour) and not maxed)
         v.qrText:SetShown(around and (all or db.showQuestRested) and not maxed)
-        v.xpText:SetShown(v.preview or (v.skinned and db.defaultXPText or not v.skinned and db.showXPText))
+        if not v.skinned then v.xpText:SetShown(v.preview or db.showXPText) end
     end
 
-    levelTimeText = maxed and ("Time played: " .. stats.played) or ("Time this level: " .. stats.levelTime)
-    SetText("levelTime", levelTimeText)
-    for _, v in ipairs(views) do
-        if v.skinned and (db.defaultLevelTime or v.preview) then v.levelText:SetText(levelTimeText) end
-    end
+    SetText("levelTime", maxed and ("Time played: " .. stats.played) or ("Time this level: " .. stats.levelTime))
     SetText("sessionTime", "Time this session: " .. stats.session)
     SetText("levelInText", string.format("Leveling in: %s (%s XP/Hour)", stats.toLevel, stats.hourly))
+    RenderSkinTexts()
 end
 
 --------------------------------------------------------------------------------
@@ -702,6 +698,100 @@ end
 
 local shown = {}
 
+-- The XP and percentage as the liquid shows them, mid-pour included.
+local function XPText()
+    if maxed then return "Max Level" end
+    local xp = floor(A.fill * A.maxXP + 0.5)
+    return string.format("%s / %s (%s)", FormatNumber(xp), FormatNumber(A.maxXP), FormatNumber(A.maxXP - xp))
+end
+
+local function PctText()
+    if maxed then return "" end
+    if A.quest > 0 then
+        return string.format("%s%% (%s%%)", Round1(A.fill * 100), Round1((A.fill + A.quest) * 100))
+    end
+    return string.format("%s%%", Round1(A.fill * 100))
+end
+
+-- What the default bar can show on its left, in the middle and on its right (Left, Centre and Right
+-- in its settings). text(v, stats, labels) gives the text; stats is nil before the session starts.
+local function Labelled(labels, label, value)
+    return labels and (label .. value) or value
+end
+
+local SKIN_SLOTS = {
+    { key = "none", name = "Nothing", text = function() return "" end },
+    { key = "levelTime", name = "Time This Level", text = function(_, s, labels)
+        if not s then return "" end
+        if maxed then return Labelled(labels, "Time played: ", s.played) end
+        return Labelled(labels, "Time this level: ", s.levelTime)
+    end },
+    { key = "xp", name = "XP", text = XPText },
+    { key = "percent", name = "Percentage", text = PctText },
+    { key = "xpHour", name = "XP/Hour", text = function(_, s, labels)
+        if not s or maxed then return "" end
+        return labels and ("XP/hour: " .. s.hourly) or (s.hourly .. "/h")
+    end },
+    { key = "toLevel", name = "Time to Level", text = function(_, s, labels)
+        if not s or maxed then return "" end
+        return Labelled(labels, "Leveling in: ", s.toLevel)
+    end },
+    { key = "session", name = "Session Time", text = function(_, s, labels)
+        if not s then return "" end
+        return Labelled(labels, "Session: ", s.session)
+    end },
+    { key = "rested", name = "Rested", text = function(v, _, labels)
+        if maxed then return "" end
+        return Labelled(labels, "Rested: ",
+            string.format("|cFF%s%s%%|r", v.theme.restedText, Round1(T.rested / T.max * 100)))
+    end },
+}
+local SKIN_SLOT_TEXT = {}
+for _, slot in ipairs(SKIN_SLOTS) do SKIN_SLOT_TEXT[slot.key] = slot.text end
+
+-- The wizard's previews of the default bar show its usual look, whatever the settings say.
+local PREVIEW_SLOTS = { defaultLeft = "levelTime", defaultCentre = "xp", defaultRight = "none" }
+local SKIN_TEXTS = { defaultLeft = "levelText", defaultCentre = "xpText", defaultRight = "pctText" }
+
+-- The slots that follow the liquid as it pours; the rest change once a second at most.
+local SKIN_ANIMATED = { xp = true, percent = true }
+
+-- poured: only the slots that follow the liquid, on views in sight (each frame while it pours). The
+-- 1 s ticker and setting changes redo everything, so a view coming into sight catches up.
+function RenderSkinTexts(poured)
+    local stats
+    for _, v in ipairs(views) do
+        if v.skinned and not (poured and not v.frame:IsVisible()) then
+            local labels = v.preview or db.defaultLabels
+            for setting, name in pairs(SKIN_TEXTS) do
+                local key = v.preview and PREVIEW_SLOTS[setting] or db[setting]
+                if not SKIN_SLOT_TEXT[key] then key = "none" end
+                if not poured or SKIN_ANIMATED[key] then
+                    if stats == nil and not SKIN_ANIMATED[key] and key ~= "none" then
+                        stats = cdb and cdb.startTime and SessionStats(T.cur, T.max) or false
+                    end
+                    v[name]:SetText(SKIN_SLOT_TEXT[key](v, stats or nil, labels))
+                    v[name]:Show()
+                end
+            end
+        end
+    end
+end
+
+-- A profile's value for one of the default bar's slots, or the default if it is not one we know
+-- (hand-edited, or from a newer version).
+local function ValidSlot(profile, setting)
+    local key = profile[setting]
+    if SKIN_SLOT_TEXT[key] then return key end
+    return DEFAULTS[setting]
+end
+
+-- The game's own XP text is hidden while the default bar shows text in its middle, where the game's
+-- sits, or our XP anywhere on it, so it does not show twice.
+local function SkinHidesGameText()
+    return db.defaultCentre ~= "none" or db.defaultLeft == "xp" or db.defaultRight == "xp"
+end
+
 local function RenderText(force)
     local fill, quest = A.fill, A.quest
     if not force and shown.fill == fill and shown.quest == quest and shown.level == A.level and shown.max == A.maxXP then
@@ -709,33 +799,17 @@ local function RenderText(force)
     end
     shown.fill, shown.quest, shown.level, shown.max = fill, quest, A.level, A.maxXP
 
-    -- The default bar has the time this level on its left, or nothing.
+    local xpText, pctText = XPText(), PctText()
     for _, v in ipairs(views) do
-        if v.skinned then
-            v.levelText:SetText((db.defaultLevelTime or v.preview) and levelTimeText or "")
-        else
+        if not v.skinned then
             v.levelText:SetText("Level " .. A.level)
+            v.xpText:SetText(xpText)
+            v.pctText:SetText(pctText)
+            v.qrText:SetText(string.format("Completed: |cFF%s%s%%|r - Rested: |cFF%s%s%%|r",
+                v.theme.questText, Round1(T.quest / T.max * 100), v.theme.restedText, Round1(T.rested / T.max * 100)))
         end
     end
-    if maxed then
-        SetText("xpText", "Max Level")
-        SetText("pctText", "")
-        return
-    end
-
-    local xp = floor(fill * A.maxXP + 0.5)
-    SetText("xpText", string.format("%s / %s (%s)", FormatNumber(xp), FormatNumber(A.maxXP), FormatNumber(A.maxXP - xp)))
-
-    if quest > 0 then
-        SetText("pctText", string.format("%s%% (%s%%)", Round1(fill * 100), Round1((fill + quest) * 100)))
-    else
-        SetText("pctText", string.format("%s%%", Round1(fill * 100)))
-    end
-
-    for _, v in ipairs(views) do
-        v.qrText:SetText(string.format("Completed: |cFF%s%s%%|r - Rested: |cFF%s%s%%|r",
-            v.theme.questText, Round1(T.quest / T.max * 100), v.theme.restedText, Round1(T.rested / T.max * 100)))
-    end
+    RenderSkinTexts(not force)
 end
 
 local function RenderView(v)
@@ -1351,7 +1425,7 @@ local function ApplySkin(verbose)
     end
     if w ~= v.width or h ~= v.height then frame:SetSize(w, h) end
     -- Every second too, in case the game shows its text again some other way.
-    MuteGameTexts(db.defaultXPText)
+    MuteGameTexts(SkinHidesGameText())
     if root then
         RenderBar()
         UpdateSessionTexts()
@@ -1447,6 +1521,18 @@ function Core.PreviewTheme(key)
     end
 end
 
+local function ApplySkinTexts()
+    RenderSkinTexts()
+    if skinTarget then MuteGameTexts(SkinHidesGameText()) end
+end
+
+-- The choices for the default bar's Left, Centre and Right: { key, name } in menu order.
+function Core.SkinSlots()
+    local list = {}
+    for _, slot in ipairs(SKIN_SLOTS) do list[#list + 1] = { key = slot.key, name = slot.name } end
+    return list
+end
+
 local SETTING_APPLY = {
     theme = function()
         previewTheme = nil -- picked from the menu: the saved theme takes over
@@ -1466,11 +1552,10 @@ local SETTING_APPLY = {
         RenderBar()
         UpdateSessionTexts()
     end,
-    defaultLevelTime = function() UpdateSessionTexts(); RenderText(true) end,
-    defaultXPText = function()
-        UpdateSessionTexts()
-        if skinTarget then MuteGameTexts(db.defaultXPText) end
-    end,
+    defaultLeft = ApplySkinTexts,
+    defaultCentre = ApplySkinTexts,
+    defaultRight = ApplySkinTexts,
+    defaultLabels = ApplySkinTexts,
     defaultQuestBar = RenderBar,
     defaultRestedBar = RenderBar,
     questBar = RenderBar,
@@ -1565,7 +1650,9 @@ function Core.CopyProfile(key)
     if not src then return end
     db.point = CopyValue(src.point or DEFAULTS.point)
     ApplyPosition()
-    ns.Options.SetAll(src)
+    local values = setmetatable({}, { __index = src })
+    for setting in pairs(SKIN_TEXTS) do values[setting] = ValidSlot(src, setting) end
+    ns.Options.SetAll(values)
     DEFAULT_CHAT_FRAME:AddMessage("|cffa070ffSmoothXP|r Copied settings from " .. key .. ".")
 end
 
@@ -1720,6 +1807,14 @@ local function MigrateBars(profile)
         profile.defaultLevelTime = profile.showLevelTime
     end
     profile.showBar, profile.skinDefaultBar = nil, nil
+    -- Up to 1.5 the default bar had two checkboxes, Time This Level (its left) and XP (its middle).
+    if profile.defaultLeft == nil and profile.defaultLevelTime ~= nil then
+        profile.defaultLeft = profile.defaultLevelTime and "levelTime" or "none"
+    end
+    if profile.defaultCentre == nil and profile.defaultXPText ~= nil then
+        profile.defaultCentre = profile.defaultXPText and "xp" or "none"
+    end
+    profile.defaultLevelTime, profile.defaultXPText = nil, nil
 end
 
 bar:SetScript("OnEvent", function(self, event, arg1, arg2)
@@ -1779,6 +1874,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         end
         if not ns.Themes.list[db.theme] then db.theme = DEFAULTS.theme end
         if db.bars ~= "default" and db.bars ~= "both" then db.bars = "separate" end
+        for setting in pairs(SKIN_TEXTS) do db[setting] = ValidSlot(db, setting) end
         main.liquid:SetOptions(db)
         ApplyTheme()
         ApplyRounding(main)

@@ -6,6 +6,15 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.6.0
+
+### New
+- The default experience bar can show text on its left, in the middle and
+  on its right. Pick each in the Default Experience Bar section: Time This
+  Level, XP, Percentage, XP/Hour, Time to Level, Session Time, Rested, or
+  Nothing. The right is empty to start with, so nothing changes until you
+  choose. Untick Text Labels for just the numbers.
+
 ## 1.5.2
 
 ### New
