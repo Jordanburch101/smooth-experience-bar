@@ -6,6 +6,12 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.5.2
+
+### New
+- XP: untick it in the Separate Bar section to hide the current and max
+  XP in the middle of the bar. The level and percentage stay.
+
 ## 1.5.1
 
 ### Fixed

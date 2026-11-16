@@ -63,6 +63,7 @@ local DEFAULTS = {
     questBar = true,         -- the separate bar's completed quest XP segment
     restedBar = true,        -- and its rested XP segment
 
+    showXPText = true,       -- current and max XP in the middle of the separate bar
     showLevelTime = true,
     showSessionTime = true,
     showXPHour = true,
@@ -654,7 +655,7 @@ local function UpdateSessionTexts()
         v.sessionTime:SetShown(around and (all or db.showSessionTime))
         v.levelInText:SetShown(around and (all or db.showXPHour) and not maxed)
         v.qrText:SetShown(around and (all or db.showQuestRested) and not maxed)
-        if v.skinned then v.xpText:SetShown(v.preview or db.defaultXPText) end
+        v.xpText:SetShown(v.preview or (v.skinned and db.defaultXPText or not v.skinned and db.showXPText))
     end
 
     levelTimeText = maxed and ("Time played: " .. stats.played) or ("Time this level: " .. stats.levelTime)
@@ -1477,6 +1478,7 @@ local SETTING_APPLY = {
     defaultTooltip = function()
         if skin and GameTooltip:IsOwned(skin.frame) then GameTooltip:Hide() end
     end,
+    showXPText = UpdateSessionTexts,
     showLevelTime = UpdateSessionTexts,
     showSessionTime = UpdateSessionTexts,
     showXPHour = UpdateSessionTexts,

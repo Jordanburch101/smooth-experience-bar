@@ -175,7 +175,7 @@ check(category.name == "Smooth Experience Bar" and category.frame is not None, "
 check(any(i.kind == "dropdown" and i.key == "theme" for i in items), "theme dropdown")
 check(sum(1 for i in items if i.kind == "button") == 8, "eight buttons")
 setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n = n + 1 end return n end")()
-check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 38,
+check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 39,
       "a row for every setting")
 # Each bar has its own section, shown only while that bar is used.
 shown_rows = lambda: {i.key or i.name for i in G.__settingsRows().values() if i.frame.shown}
@@ -184,14 +184,14 @@ bars_opts = bars_dd.getOptions()
 check([bars_opts[i + 1].label for i in range(len(bars_opts))] == ["Separate Bar", "Default Experience Bar", "Both"],
       "Experience Bar: the setup wizard's three choices")
 rows = shown_rows()
-check({"Separate Bar", "width", "showXPHour", "rounding", "segments", "hideBlizzardBar", "Reset Position & Size"} <= rows
+check({"Separate Bar", "width", "showXPText", "showXPHour", "rounding", "segments", "hideBlizzardBar", "Reset Position & Size"} <= rows
       and not rows & {"Default Experience Bar", "defaultLevelTime", "defaultXPText", "defaultTooltip"},
       "separate bar: its section shown, the default bar's not")
 lua.execute("__settings.bars:SetValue('default')")
 rows = shown_rows()
 check({"Default Experience Bar", "defaultLevelTime", "defaultXPText", "defaultTooltip", "defaultQuestBar",
        "defaultRestedBar", "theme", "speed"} <= rows
-      and not rows & {"Separate Bar", "width", "locked", "showXPHour", "rounding", "segments", "hideBlizzardBar", "questBar",
+      and not rows & {"Separate Bar", "width", "locked", "showXPText", "showXPHour", "rounding", "segments", "hideBlizzardBar", "questBar",
                      "restedBar"},
       "default bar: its section shown, the separate bar's not")
 lua.execute("__settings.bars:SetValue('both')")
@@ -241,7 +241,7 @@ for cmd in ["unlock", "lock", "reset", "session"]:
     slash(cmd)
 
 print("== every setting toggled off and back on")
-for key in ["showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
+for key in ["showXPText", "showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
             "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "segments", "fontOutline", "locked", "hideBlizzardBar", "defaultLevelTime", "defaultXPText", "defaultTooltip", "questBar", "restedBar", "defaultQuestBar",
             "defaultRestedBar", "resetOnReload", "showMaxLevel", "fadeIdle"]:
     default = G.__settings[key].GetValue(G.__settings[key])
@@ -251,6 +251,16 @@ for key in ["showLevelTime", "showSessionTime", "showXPHour", "showQuestRested",
 lua.execute("__settings.showLevelTime:SetValue(false)")
 check("Time this level" not in step("showLevelTime off", None, 0.2), "text line can be hidden")
 lua.execute("__settings.showLevelTime:SetValue(true)")
+lua.execute("__settings.showXPText:SetValue(false)")
+xp_off = step("showXPText off", None, 0.2)
+check(" / " not in xp_off and xp_off.startswith("Level "), f"XP in the middle of the bar can be hidden ({xp_off})")
+xp_off = step("showXPText off, XP gain", "SlashCmdList.SMOOTHEXPERIENCEBAR('test')", 1)
+check(" / " not in xp_off and xp_off.startswith("Level "), f"XP stays hidden through an XP gain ({xp_off})")
+xp_off = step("showXPText off, level-up", "SlashCmdList.SMOOTHEXPERIENCEBAR('test level')", 2)
+check(" / " not in xp_off and xp_off.startswith("Level "), f"XP stays hidden through a level-up ({xp_off})")
+step("showXPText off, test off", "SlashCmdList.SMOOTHEXPERIENCEBAR('test off')", 2)
+lua.execute("__settings.showXPText:SetValue(true)")
+check(" / " in step("showXPText on", None, 0.2), "XP in the middle of the bar back")
 lua.execute("__settings.hideBlizzardBar:SetValue(true)")
 check(not G.MainMenuExpBar.shown, "default XP bar hidden")
 lua.execute("MainMenuExpBar:Show()")
@@ -584,6 +594,9 @@ check(skin_texts() == "204,931 / 311,490 (106,559) | left: Time this level: 6m",
       f"default bar only: still no lines around it ({skin_texts()})")
 lua.execute("__settings.showLevelTime:SetValue(false)")
 check("left: Time this level" in skin_texts(), "the separate bar's Time This Level leaves the default bar alone")
+lua.execute("__settings.showXPText:SetValue(false)")
+check("204,931 / 311,490" in skin_texts(), "the separate bar's XP leaves the default bar alone")
+lua.execute("__settings.showXPText:SetValue(true)")
 lua.execute("__settings.showLevelTime:SetValue(true); __settings.defaultLevelTime:SetValue(false)")
 check(skin_texts() == "204,931 / 311,490 (106,559)", f"default bar's Time This Level off: nothing on its left ({skin_texts()})")
 lua.execute("__settings.defaultLevelTime:SetValue(true)")
