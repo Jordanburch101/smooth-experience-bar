@@ -222,19 +222,63 @@ UIParent.w, UIParent.h = 1920, 1080
 local ROW_TEMPLATES = {
     SettingsCheckboxControlTemplate = true, SettingsSliderControlTemplate = true,
     SettingsDropdownControlTemplate = true, SettingButtonControlTemplate = true,
-    SettingsListSectionHeaderTemplate = true,
+    SettingsListSectionHeaderTemplate = true, SettingsCheckboxSliderControlTemplate = true,
 }
 local TEMPLATES = { MinimalScrollBar = true, UIPanelButtonTemplate = true, UIRadioButtonTemplate = true,
-                    ButtonFrameTemplate = true }
+                    ButtonFrameTemplate = true, MinimalSliderWithSteppersTemplate = true }
 local RowTemplate = {}
 function RowTemplate.Init(self, initializer)
     assert(self.GetElementData and self:GetElementData() == initializer, "row Init without its GetElementData")
     assert(not self.initialized, "row initialised again without Release")
     self.initialized, self.initializer = true, initializer
-    local setting = initializer.data.setting
+    local d = initializer.data
+    local setting = d.setting or d.cbSetting
     self.value = setting and setting:GetValue()
+    if d.sliderSetting then self.sliderValue = d.sliderSetting:GetValue() end
+    -- SettingsDropdownControlMixin:InitDropdown
+    if self.Control and self.forceSteppersHidden then self.Control:HideSteppers() end
 end
 function RowTemplate.Release(self) self.initialized = false end
+
+-- MinimalSliderWithSteppersMixin (MinimalSlider.lua): Init sets the range and value, then hooks
+-- OnValueChanged, so Init itself reports nothing. Setting a new value afterwards fires OnValueChanged
+-- to callbacks, which get their owner first (CallbackRegistryMixin). Release unhooks it.
+function __newMinimalSlider(f)
+    local slider = { value = 0, enabled = true }
+    f.Slider, f.callbacks, f.enabled = slider, {}, true
+    function slider:SetValue(v)
+        assert(type(v) == "number", "Slider:SetValue needs a number")
+        if self.min then v = math.min(self.max, math.max(self.min, v)) end
+        if v == self.value then return end
+        self.value = v
+        if self.onValueChanged then self.onValueChanged(self, v) end
+    end
+    function slider:GetValue() return self.value end
+    function f:RegisterCallback(event, fn, owner)
+        assert(event == MinimalSliderWithSteppersMixin.Event.OnValueChanged and type(fn) == "function" and owner ~= nil,
+            "Usage: RegisterCallback(event, func, owner)")
+        self.callbacks[#self.callbacks + 1] = { fn = fn, owner = owner }
+    end
+    function f:Init(value, minValue, maxValue, steps, formatters)
+        assert(type(value) == "number" and type(minValue) == "number" and type(maxValue) == "number"
+            and type(steps) == "number" and steps > 0, "Usage: Init(value, minValue, maxValue, steps, formatters)")
+        slider.min, slider.max, slider.step = minValue, maxValue, (maxValue - minValue) / steps
+        slider.onValueChanged = nil
+        slider:SetValue(value)
+        self.formatters = formatters
+        self:FormatValue(value)
+        slider.onValueChanged = function(_, v)
+            self:FormatValue(v)
+            for _, cb in ipairs(self.callbacks) do cb.fn(cb.owner, v) end
+        end
+    end
+    function f:FormatValue(v)
+        for _, fmt in pairs(self.formatters or {}) do self.label = fmt(v) end
+    end
+    function f:SetValue(v) slider:SetValue(v) end
+    function f:SetEnabled(on) self.enabled = on and true or false end
+    function f:Release() slider.onValueChanged = nil end
+end
 
 local function insideOpenSettings(f)
     while f do
@@ -251,6 +295,16 @@ function CreateFrame(_, name, parent, template)
     if ROW_TEMPLATES[template] then
         f.rowTemplate, f.Init, f.Release = template, RowTemplate.Init, RowTemplate.Release
     end
+    -- SettingsDropdownControlMixin:OnLoad: the dropdown and its arrows (DropdownWithSteppersTemplate).
+    if template == "SettingsDropdownControlTemplate" then
+        f.Control = CreateFrame("Frame", nil, f)
+        f.Control:SetSize(223, 38)
+        f.Control:SetPoint("LEFT", f, "CENTER", -48, 3)
+        f.Control.Dropdown = CreateFrame("Frame", nil, f.Control)
+        f.Control.Dropdown:SetWidth(220)
+        function f.Control:HideSteppers() self.steppersHidden = true end
+    end
+    if template == "MinimalSliderWithSteppersTemplate" then __newMinimalSlider(f) end
     -- The game's window: background, inset, a title and a close button that hides it.
     if template == "ButtonFrameTemplate" then
         f.Bg = NewRegion("Texture", f, "BACKGROUND", 0)
@@ -481,15 +535,37 @@ function Settings.CreateCheckboxInitializer(s, options, tooltip)
     assert(s.vtype == "boolean", "checkbox on non-boolean " .. s.key)
     return NewInitializer("SettingsCheckboxControlTemplate", "checkbox", SettingData(s, options, tooltip))
 end
-function Settings.CreateSliderOptions(lo, hi, step)
-    local o = { min = lo, max = hi, step = step }
-    function o:SetLabelFormatter(_, f) self.fmt = f end
+-- The fields of Settings.CreateSliderOptions (SettingsSliderOptionsMixin).
+function Settings.CreateSliderOptions(minValue, maxValue, rate)
+    local o = { minValue = minValue or 0, maxValue = maxValue or 1 }
+    o.steps = (rate and (maxValue - minValue) / rate) or 100
+    function o:SetLabelFormatter(labelType, f)
+        self.formatters = self.formatters or {}
+        self.formatters[labelType] = f
+    end
     return o
 end
-function Settings.CreateSliderInitializer(s, o, tooltip)
+local function CheckSliderOptions(s, o)
     assert(s.vtype == "number" and o ~= nil, "slider on non-number or without options " .. s.key)
-    assert(type(o.fmt(s:GetValue())) == "string", "slider formatter for " .. s.key)
+    for _, f in pairs(o.formatters or {}) do
+        assert(type(f(s:GetValue())) == "string", "slider formatter for " .. s.key)
+    end
+end
+function Settings.CreateSliderInitializer(s, o, tooltip)
+    CheckSliderOptions(s, o)
     return NewInitializer("SettingsSliderControlTemplate", "slider", SettingData(s, o, tooltip))
+end
+-- A checkbox with a slider beside it, greyed out while the box is unticked (Blizzard_SettingControls).
+function CreateSettingsCheckboxSliderInitializer(cbSetting, cbLabel, cbTooltip, sliderSetting, sliderOptions, sliderLabel,
+                                                 sliderTooltip)
+    assert(type(cbSetting) == "table" and cbSetting.vtype == "boolean", "checkbox slider: checkbox on non-boolean")
+    assert(type(cbLabel) == "string" and type(sliderLabel) == "string", "checkbox slider: labels")
+    CheckSliderOptions(sliderSetting, sliderOptions)
+    return NewInitializer("SettingsCheckboxSliderControlTemplate", "checkboxslider", {
+        name = cbLabel, tooltip = cbTooltip, cbSetting = cbSetting, cbLabel = cbLabel, cbTooltip = cbTooltip,
+        sliderSetting = sliderSetting, sliderOptions = sliderOptions, sliderLabel = sliderLabel,
+        sliderTooltip = sliderTooltip,
+    })
 end
 -- The game calls getOptions each time the menu opens; tests call it the same way.
 function Settings.CreateDropdownInitializer(s, getOptions, tooltip)
@@ -530,7 +606,8 @@ function __closeSettings()
     __settingsPanel.shown = false
     if __settingsCategory and __settingsCategory.frame then __settingsCategory.frame:Hide() end
 end
-MinimalSliderWithSteppersMixin = { Label = { Right = 1 } }
+MinimalSliderWithSteppersMixin = { Label = { Left = 1, Right = 2, Top = 3, Min = 4, Max = 5 },
+                                   Event = { OnValueChanged = "OnValueChanged" } }
 function CreateSettingsButtonInitializer(name, buttonText, buttonClick, tooltip, addSearchTags)
     assert(addSearchTags ~= nil, "CreateSettingsButtonInitializer needs addSearchTags")
     local data = { name = name, buttonText = buttonText, buttonClick = buttonClick, tooltip = tooltip }
@@ -548,8 +625,10 @@ function __settingsRows()
         if r.rowTemplate and init then
             local d = init.data
             local getOptions = type(d.options) == "function" and d.options or nil
+            local setting = d.setting or d.cbSetting
             out[#out + 1] = {
-                kind = init.kind, key = d.setting and d.setting.key, name = d.name, frame = r,
+                kind = init.kind, key = setting and setting.key, name = d.name, frame = r,
+                sliderKey = d.sliderSetting and d.sliderSetting.key,
                 onClick = d.buttonClick, getOptions = getOptions, options = getOptions and getOptions(),
             }
         end

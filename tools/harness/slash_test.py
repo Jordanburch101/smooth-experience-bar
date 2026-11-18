@@ -180,8 +180,10 @@ check(category.name == "Smooth Experience Bar" and category.frame is not None, "
 check(any(i.kind == "dropdown" and i.key == "theme" for i in items), "theme dropdown")
 check(sum(1 for i in items if i.kind == "button") == 8, "eight buttons")
 setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n = n + 1 end return n end")()
-check(sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown")) == setting_count == 41,
-      "a row for every setting")
+size_sliders = [i for i in items if i.kind == "dropdown" and i.frame.SizeSlider]
+covered = (sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown"))
+           + 2 * sum(1 for i in items if i.kind == "checkboxslider") + len(size_sliders))
+check(covered == setting_count == 53, f"a control for every setting ({covered} of {setting_count})")
 # Each bar has its own section, shown only while that bar is used.
 shown_rows = lambda: {i.key or i.name for i in G.__settingsRows().values() if i.frame.shown}
 bars_dd = next(i for i in items if i.kind == "dropdown" and i.key == "bars")
@@ -246,7 +248,7 @@ for cmd in ["unlock", "lock", "reset", "session"]:
     slash(cmd)
 
 print("== every setting toggled off and back on")
-for key in ["showXPText", "showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
+for key in ["showLevelText", "showXPText", "showPctText", "showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
             "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "segments", "fontOutline", "locked", "hideBlizzardBar", "defaultLabels", "defaultTooltip", "questBar", "restedBar", "defaultQuestBar",
             "defaultRestedBar", "resetOnReload", "showMaxLevel", "fadeIdle"]:
     default = G.__settings[key].GetValue(G.__settings[key])
@@ -303,6 +305,61 @@ lua.execute(r"__fontFiles['FONTS\\MORPHEUS.TTF'] = nil; __settings.height:SetVal
 check(fonts() == {(r"Fonts\FRIZQT__.TTF", "")}, f"a font the client cannot load falls back to the game font {fonts()}")
 lua.execute(r"""__fontFiles['FONTS\\MORPHEUS.TTF'] = true; __settings.height:SetValue(30)
     __settings.font:SetValue('GameFontNormal'); __settings.fontOutline:SetValue(true)""")
+# A text line's (size, y offset), by the frame it is on and its anchor.
+font_at = lua.eval("""function(frame, point, relPoint)
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and (r.parent == frame or r.parent.parent == frame) and r.points[point]
+            and r.points[point].relPoint == relPoint then
+            return r.fontSize, r.points[point].y
+        end
+    end
+end""")
+bar = G.SmoothExperienceBarFrame
+text_lines = {"level": ("LEFT", "LEFT"), "xp": ("CENTER", "CENTER"), "pct": ("RIGHT", "RIGHT"),
+              "levelTime": ("TOPLEFT", "TOPLEFT"), "session": ("TOPRIGHT", "TOPRIGHT"),
+              "xpHour": ("LEFT", "BOTTOMLEFT"), "questRested": ("RIGHT", "BOTTOMRIGHT")}
+size_keys = ["levelSize", "xpSize", "pctSize", "levelTimeSize", "sessionTimeSize", "xpHourSize", "questRestedSize"]
+line_sizes = lambda: {k: tuple(font_at(bar, *p)) for k, p in text_lines.items()}
+before = line_sizes()
+check(before == {"level": (16, 0), "xp": (14, 0), "pct": (16, 0), "levelTime": (14, 24), "session": (14, 24),
+                 "xpHour": (14, -18), "questRested": (14, -18)},
+      f"text sizes at 100% as they were ({before})")
+lua.execute("__settings.xpSize:SetValue(150)")
+after = line_sizes()
+check(after["xp"] == (21, 0) and all(after[k] == before[k] for k in text_lines if k != "xp"),
+      f"XP Size: only the XP grows ({after})")
+lua.execute("__settings.levelTimeSize:SetValue(200); __settings.xpHourSize:SetValue(150); __settings.levelSize:SetValue(50); "
+            "__settings.pctSize:SetValue(75)")
+after = line_sizes()
+check(after == {"level": (8, 0), "xp": (21, 0), "pct": (12, 0), "levelTime": (28, 38), "session": (14, 24),
+                "xpHour": (21, -21.5), "questRested": (14, -18)},
+      f"each line its own size; the lines above and below grow away from the bar ({after})")
+lua.execute("__settings.height:SetValue(60)")
+check(line_sizes()["xp"] == (34, 0), f"text sizes still follow the bar's height ({line_sizes()['xp']})")
+lua.execute("__settings.height:SetValue(30)")
+for key in size_keys:
+    lua.execute(f"__settings.{key}:SetValue(100)")
+check(line_sizes() == before, f"text sizes back ({line_sizes()})")
+# The separate bar's text rows: each line's checkbox with its size beside it, one row each.
+text_rows = {i.key: i.sliderKey for i in items if i.kind == "checkboxslider"}
+check(text_rows == {"showLevelText": "levelSize", "showXPText": "xpSize", "showPctText": "pctSize",
+                    "showLevelTime": "levelTimeSize", "showSessionTime": "sessionTimeSize", "showXPHour": "xpHourSize",
+                    "showQuestRested": "questRestedSize"},
+      f"separate bar: each text line and its size on one row ({text_rows})")
+text_shown = lua.eval("""function(frame, point, relPoint)
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.parent == frame and r.points[point]
+            and r.points[point].relPoint == relPoint then
+            return r.shown
+        end
+    end
+end""")
+for key, name in [("showLevelText", "level"), ("showPctText", "pct")]:
+    lua.execute(f"__settings.{key}:SetValue(false)")
+    check(text_shown(bar, *text_lines[name]) is False and text_shown(bar, *text_lines["xp"]),
+          f"{key} off hides only that text")
+    lua.execute(f"__settings.{key}:SetValue(true)")
+    check(text_shown(bar, *text_lines[name]), f"{key} back on shows it")
 segment_lines = lua.eval("""function(frame)
     local n, xs = 0, {}
     for _, r in ipairs(__regions) do
@@ -655,6 +712,48 @@ check(mid != slots().centre and slots().centre.startswith("229,850 / 311,490"),
       f"the default bar's XP follows the liquid as it pours ({mid} -> {slots().centre})")
 slash("test off", 2)
 check(skin_texts() == "204,931 / 311,490 (106,559) | left: Time this level: 6m", f"back to the usual look ({skin_texts()})")
+# Text sizes: each of the default bar's three texts has its own, apart from the separate bar's.
+skin_frame = G.SmoothExperienceBarDefaultFrame
+sizes = lambda: (font_at(skin_frame, "LEFT", "LEFT")[0], font_at(skin_frame, "CENTER", "CENTER")[0],
+                 font_at(skin_frame, "RIGHT", "RIGHT")[0])
+before, bar_xp = sizes(), font_at(bar, "CENTER", "CENTER")[0]
+lua.execute("__settings.defaultCentreSize:SetValue(150)")
+after = sizes()
+check(after[1] > before[1] and (after[0], after[2]) == (before[0], before[2])
+      and font_at(bar, "CENTER", "CENTER")[0] == bar_xp,
+      f"default bar's Centre Text Size: only its middle text grows ({before} -> {after})")
+lua.execute("__settings.defaultLeftSize:SetValue(50); __settings.defaultRightSize:SetValue(200)")
+after = sizes()
+check(after[0] < before[0] and after[2] > before[2], f"Left and Right Text Size: each its own ({before} -> {after})")
+lua.execute("__settings.defaultLeftSize:SetValue(100); __settings.defaultCentreSize:SetValue(100); "
+            "__settings.defaultRightSize:SetValue(100)")
+check(sizes() == before, f"default bar's text sizes back ({sizes()})")
+# On the settings page each of the three has its size slider on its own row, beside the dropdown.
+slot_rows = {i.key: i.frame for i in G.__settingsRows().values() if i.kind == "dropdown" and i.frame.SizeSlider}
+check(set(slot_rows) == {"defaultLeft", "defaultCentre", "defaultRight"}
+      and all(f.Control.steppersHidden and f.Control.Dropdown.w < 220 for f in slot_rows.values()),
+      "default bar: Left, Centre and Right each with a size slider, the dropdown narrowed to make room")
+centre_slider = slot_rows["defaultCentre"].SizeSlider
+check(centre_slider.Slider.value == 100 and centre_slider.label == "100%", "size slider starts at the setting")
+centre_slider.SetValue(centre_slider, 125)
+check(lua.eval("__settings.defaultCentreSize:GetValue()") == 125
+      and sizes()[1] > before[1], f"moving the size slider sizes the centre text ({sizes()})")
+lua.execute("__settings.defaultCentreSize:SetValue(100)")
+check(centre_slider.Slider.value == 100 and centre_slider.label == "100%",
+      "size slider follows the setting changed elsewhere (a copied profile)")
+check(all(f.SizeSlider.enabled for k, f in slot_rows.items() if k != "defaultRight")
+      and not slot_rows["defaultRight"].SizeSlider.enabled, "size slider greyed out while its text shows Nothing")
+lua.execute("__settings.defaultRight:SetValue('percent')")
+check(slot_rows["defaultRight"].SizeSlider.enabled, "and live again once it shows something")
+lua.execute("__settings.defaultRight:SetValue('none')")
+preview_xp = lua.eval("""function(ns)
+    __settings.defaultCentreSize:SetValue(200)
+    local v = ns.Core.NewPreview(UIParent, "skin")
+    local size = v.xpText.fontSize
+    __settings.defaultCentreSize:SetValue(100)
+    return size
+end""")(ns)
+check(preview_xp == before[1], f"wizard previews keep the usual text size whatever the settings ({preview_xp})")
 # Completed quest and rested segments: (shown, width) of each, per bar.
 segment = lua.eval('''function(frame, sub)
     for _, r in ipairs(__regions) do

@@ -6,6 +6,19 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.7.0
+
+### New
+- Text sizes: make any text on the bars bigger or smaller, each on its
+  own, from 50% to 200% of its usual size (which still follows the bar's
+  height). Each text's size slider sits on the same row as the text: beside
+  its checkbox on the separate bar, and beside the Left, Centre and Right
+  Text choices on the default bar. A size is greyed out while its text is
+  hidden.
+- Level and Percentage: untick either to hide it on the separate bar.
+- The Separate Bar settings are grouped under Size & Position, Text, Bar
+  and Fade.
+
 ## 1.6.0
 
 ### New

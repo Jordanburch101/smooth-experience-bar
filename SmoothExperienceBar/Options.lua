@@ -18,11 +18,19 @@ ns.Options = Options
 local HEADER_H, TITLE_X, TITLE_Y = 50, 7, -22
 local LIST_X, LIST_Y, LIST_RIGHT, LIST_BOTTOM = -15, -2, -20, -2
 local PAD, PAD_LEFT, SPACING = 10, 25, 9
-local ROW_H, SECTION_H = 26, 45
+local ROW_H, SECTION_H, SUBHEAD_H = 26, 45, 22
+-- A row's controls start this far left of its centre, and its label ends just before them
+-- (SettingsListElementMixin, SettingsSliderControlMixin).
+local CONTROL_X = -80
+-- The default bar's text rows: a narrower dropdown, and its size slider beside it.
+local SLOT_DROPDOWN_W, SLOT_SLIDER_W, SLOT_GAP = 160, 180, 10
+-- Text Size, in percent of the size the line has at the bar's height.
+local SIZE_MIN, SIZE_MAX, SIZE_STEP = 50, 200, 5
 
 local category, canvas, content, db, defaults
-local rows = {} -- { frame, initializer, height, when }, in page order
+local rows = {} -- { frame, initializer, height, when, refresh }, in page order
 local registered = {}
+local watchers = {} -- setting key -> a function to call when it changes, for controls of our own
 local LayoutRows
 
 -- The section rows go in: a section for one of the bars shows only while that bar is used, so the
@@ -35,6 +43,7 @@ local function Register(key, name)
     setting:SetValueChangedCallback(function(_, value)
         ns.Core.OnSettingChanged(key, value)
         if key == "bars" then LayoutRows() end
+        if watchers[key] then watchers[key](value) end
     end)
     registered[key] = setting
     return setting
@@ -43,15 +52,21 @@ end
 -- A row: a frame of ours made from the initializer's template. The template's code finds its
 -- initializer through GetElementData, as it does in the game's list. when, if given, narrows the
 -- section's own condition for this row.
-local function Row(initializer, height, when)
+local function AddRow(row, when)
+    local inSection = section
+    row.height = row.height or ROW_H
+    row.when = function() return (not inSection or inSection()) and (not when or when()) end
+    rows[#rows + 1] = row
+    return row
+end
+
+-- setup, if given, adjusts the frame before its first Init.
+local function Row(initializer, height, when, setup)
     local frame = CreateFrame("Frame", nil, content, initializer:GetTemplate())
     frame.GetElementData = function() return initializer end
+    if setup then setup(frame) end
     initializer:InitFrame(frame)
-    local inSection = section
-    rows[#rows + 1] = {
-        frame = frame, initializer = initializer, height = height or ROW_H,
-        when = function() return (not inSection or inSection()) and (not when or when()) end,
-    }
+    return AddRow({ frame = frame, initializer = initializer, height = height }, when)
 end
 
 local function Header(text, when)
@@ -59,20 +74,104 @@ local function Header(text, when)
     Row(CreateSettingsListSectionHeaderInitializer(text), SECTION_H)
 end
 
+-- A group inside a section: white text, smaller than a section's, with a faint line after it.
+local function SubHeader(text)
+    local frame = CreateFrame("Frame", nil, content)
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("BOTTOMLEFT", 17, 4)
+    label:SetText(text)
+    local line = frame:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(1, 1, 1, 0.15)
+    line:SetPoint("LEFT", label, "RIGHT", 8, 0)
+    line:SetPoint("RIGHT", frame, "RIGHT", -20, 0)
+    line:SetHeight(1)
+    AddRow({ frame = frame, height = SUBHEAD_H })
+end
+
 local function Checkbox(key, name, tooltip, when)
     Row(Settings.CreateCheckboxInitializer(Register(key, name), nil, tooltip), nil, when)
 end
 
-local function Slider(key, name, tooltip, minValue, maxValue, step, format)
+local function SliderOptions(minValue, maxValue, step, format)
     local sliderOptions = Settings.CreateSliderOptions(minValue, maxValue, step)
     sliderOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
         return format:format(value)
     end)
-    Row(Settings.CreateSliderInitializer(Register(key, name), sliderOptions, tooltip))
+    return sliderOptions
+end
+
+local function Slider(key, name, tooltip, minValue, maxValue, step, format)
+    Row(Settings.CreateSliderInitializer(Register(key, name), SliderOptions(minValue, maxValue, step, format), tooltip))
+end
+
+local SIZE_TOOLTIP = "Size of this text. 100% is its usual size, which follows the bar's height."
+local sizeOptions -- shared by every Text Size slider; made on first use, once the Settings API is checked
+
+local function SizeOptions()
+    sizeOptions = sizeOptions or SliderOptions(SIZE_MIN, SIZE_MAX, SIZE_STEP, "%d%%")
+    return sizeOptions
+end
+
+-- One of the separate bar's text lines: whether it shows, and its size beside it, greyed out while
+-- the line is off (the game's own checkbox-and-slider row).
+local function TextRow(showKey, name, tooltip, sizeKey)
+    local show, size = Register(showKey, name), Register(sizeKey, name .. " Size")
+    if CreateSettingsCheckboxSliderInitializer then
+        Row(CreateSettingsCheckboxSliderInitializer(show, name, tooltip, size, SizeOptions(), name .. " Size", SIZE_TOOLTIP))
+    else
+        Row(Settings.CreateCheckboxInitializer(show, nil, tooltip))
+        Row(Settings.CreateSliderInitializer(size, SizeOptions(), SIZE_TOOLTIP))
+    end
 end
 
 local function Dropdown(setting, tooltip, getOptions)
     Row(Settings.CreateDropdownInitializer(setting, getOptions, tooltip))
+end
+
+-- One of the default bar's texts: what shows there, and its size beside it, greyed out while it
+-- shows Nothing. The game has no dropdown-and-slider row, so the slider (the game's own) goes on
+-- the dropdown row, with the dropdown narrowed and its arrows left off to make room. A client whose
+-- dropdown row is built differently gets the size on a row of its own under it instead.
+local function SlotRow(key, name, tooltip, getOptions, sizeKey)
+    local sizeSetting = Register(sizeKey, name .. " Size")
+    local options = SizeOptions()
+    local row = Row(Settings.CreateDropdownInitializer(Register(key, name), getOptions, tooltip), nil, nil,
+        function(frame) frame.forceSteppersHidden = true end)
+    local frame = row.frame
+    local control = frame.Control
+    if not (control and control.Dropdown and MinimalSliderWithSteppersMixin.Event) then
+        Row(Settings.CreateSliderInitializer(sizeSetting, options, SIZE_TOOLTIP))
+        return
+    end
+    control:ClearAllPoints()
+    control:SetPoint("LEFT", frame, "CENTER", CONTROL_X, 3)
+    control:SetWidth(SLOT_DROPDOWN_W)
+    control.Dropdown:SetWidth(SLOT_DROPDOWN_W)
+
+    local slider = CreateFrame("Frame", nil, frame, "MinimalSliderWithSteppersTemplate")
+    slider:SetWidth(SLOT_SLIDER_W)
+    slider:SetPoint("LEFT", control, "RIGHT", SLOT_GAP, 0)
+    slider:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value)
+        sizeSetting:SetValue(value)
+    end, frame)
+    if Mixin and DefaultTooltipMixin and GenerateClosure and Settings.InitTooltip then
+        Mixin(slider.Slider, DefaultTooltipMixin)
+        slider.Slider:InitDefaultTooltipScriptHandlers()
+        slider.Slider:SetCustomTooltipAnchoring(slider.Slider, "ANCHOR_RIGHT", 20, 0)
+        slider.Slider:SetTooltipFunc(GenerateClosure(Settings.InitTooltip, name .. " Size", SIZE_TOOLTIP))
+    end
+    frame.SizeSlider = slider
+
+    local function Enable() slider:SetEnabled(db[key] ~= "none") end
+    -- As the game's rows do on each page open: release, then set up from the setting again.
+    row.refresh = function()
+        slider:Release()
+        slider:Init(sizeSetting:GetValue(), options.minValue, options.maxValue, options.steps, options.formatters)
+        Enable()
+    end
+    row.refresh()
+    watchers[key] = Enable
+    watchers[sizeKey] = function(value) slider:SetValue(value) end
 end
 
 -- The fifth argument is whether the row adds search tags; the game asserts it is given, and a
@@ -171,8 +270,11 @@ local function BuildPage(title)
     -- changes made elsewhere (/seb lock, dragging the grip, a copied profile) show.
     canvas:SetScript("OnShow", function()
         for _, row in ipairs(rows) do
-            row.initializer:Resetter(row.frame)
-            row.initializer:InitFrame(row.frame)
+            if row.initializer then
+                row.initializer:Resetter(row.frame)
+                row.initializer:InitFrame(row.frame)
+            end
+            if row.refresh then row.refresh() end
         end
         LayoutRows()
     end)
@@ -219,34 +321,44 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("resetOnReload", "Reset Session on Reload", "Restart session time and XP/hour on /reload as well as on login.")
 
     Header("Separate Bar", SeparateUsed)
+    SubHeader("Size & Position")
     Checkbox("locked", "Lock Bar", "Untick to move the bar by dragging it and resize it from the corner grip.")
     Slider("scale", "Scale", "Size of the whole bar, text included.", 0.4, 1.5, 0.05, "%.2f")
     Slider("width", "Width", "Bar width. Also set by dragging the corner grip while unlocked.", 200, 1600, 10, "%d")
     Slider("height", "Height", "Bar height; text scales with it.", 16, 60, 1, "%d")
-    Checkbox("showXPText", "XP", "Current and max XP, and the XP still to go, in the middle of the bar.")
-    Checkbox("showLevelTime", "Time This Level", "Played time at this level above the bar (total played at max level).")
-    Checkbox("showSessionTime", "Session Time", "Time since you logged in, above the bar.")
-    Checkbox("showXPHour", "Leveling Time & XP/Hour", "Estimated time to level from this session's XP rate, under the bar.")
-    Checkbox("showQuestRested", "Completed & Rested", "Completed quest XP and rested XP as a percentage of the level, under the bar.")
+    Button("Reset Position & Size", "Reset", Core.ResetPosition, "Move the bar back to the top of the screen at its default size.")
+    SubHeader("Text")
+    TextRow("showLevelText", "Level", "Your level on the left of the bar.", "levelSize")
+    TextRow("showXPText", "XP", "Current and max XP, and the XP still to go, in the middle of the bar.", "xpSize")
+    TextRow("showPctText", "Percentage", "How far through the level you are, on the right of the bar.", "pctSize")
+    TextRow("showLevelTime", "Time This Level", "Played time at this level above the bar (total played at max level).",
+        "levelTimeSize")
+    TextRow("showSessionTime", "Session Time", "Time since you logged in, above the bar.", "sessionTimeSize")
+    TextRow("showXPHour", "Leveling Time & XP/Hour", "Estimated time to level from this session's XP rate, under the bar.",
+        "xpHourSize")
+    TextRow("showQuestRested", "Completed & Rested",
+        "Completed quest XP and rested XP as a percentage of the level, under the bar.", "questRestedSize")
+    SubHeader("Bar")
     Checkbox("questBar", "Completed Quest Bar", "The XP of quests ready to turn in, shown after your XP in the bar.")
     Checkbox("restedBar", "Rested Bar", "Your rested XP, shown after your XP (and completed quests) in the bar.")
     Checkbox("rounding", "Rounded Liquid", "Shade the top and bottom of the bar so the liquid looks round.")
     Checkbox("segments", "Segmented Bar", "Divide the bar into 20 segments, like the game's experience bar.")
+    Checkbox("hideBlizzardBar", "Hide Default Experience Bar", "Hide the game's own experience bar.", SeparateOnly)
+    SubHeader("Fade")
     Checkbox("fadeIdle", "Fade When Idle", "Fade the bar after a while. Hover over it to reveal it; it also "
         .. "comes back when you gain XP, in or out of combat.")
     Slider("fadeDelay", "Fade After", "Seconds since the last XP gain or hover before the bar fades.",
         2, 30, 1, "%ds")
     Slider("fadeOpacity", "Faded Opacity", "How visible the bar stays once faded. 0% hides it until you hover over it.",
         0, 90, 5, "%d%%")
-    Checkbox("hideBlizzardBar", "Hide Default Experience Bar", "Hide the game's own experience bar.", SeparateOnly)
-    Button("Reset Position & Size", "Reset", Core.ResetPosition, "Move the bar back to the top of the screen at its default size.")
 
     Header("Default Experience Bar", DefaultUsed)
     local slotHelp = " Time This Level, Time to Level and XP/Hour come from your played time and this session's XP."
-    Dropdown(Register("defaultLeft", "Left Text"), "What shows on the left of the bar." .. slotHelp, SlotOptions)
-    Dropdown(Register("defaultCentre", "Centre Text"), "What shows in the middle of the bar. While anything shows "
-        .. "there, the game's own XP text is hidden so the two do not overlap." .. slotHelp, SlotOptions)
-    Dropdown(Register("defaultRight", "Right Text"), "What shows on the right of the bar." .. slotHelp, SlotOptions)
+    SlotRow("defaultLeft", "Left Text", "What shows on the left of the bar." .. slotHelp, SlotOptions, "defaultLeftSize")
+    SlotRow("defaultCentre", "Centre Text", "What shows in the middle of the bar. While anything shows "
+        .. "there, the game's own XP text is hidden so the two do not overlap." .. slotHelp, SlotOptions,
+        "defaultCentreSize")
+    SlotRow("defaultRight", "Right Text", "What shows on the right of the bar." .. slotHelp, SlotOptions, "defaultRightSize")
     Checkbox("defaultLabels", "Text Labels", "Name each number, as in \"Time this level: 2h 13m\". "
         .. "Untick for just the numbers (XP/hour keeps a short /h).")
     Checkbox("defaultQuestBar", "Completed Quest Bar", "The XP of quests ready to turn in, shown after your XP in the bar.")

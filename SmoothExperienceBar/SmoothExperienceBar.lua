@@ -58,6 +58,9 @@ local DEFAULTS = {
     defaultLeft = "levelTime",
     defaultCentre = "xp",
     defaultRight = "none",
+    defaultLeftSize = 100,   -- Text Size of each, in percent
+    defaultCentreSize = 100,
+    defaultRightSize = 100,
     defaultLabels = true,    -- "Time this level: 2h 13m", or just "2h 13m"
     defaultTooltip = true,
     defaultQuestBar = true,  -- the completed quest XP segment after the fill
@@ -66,11 +69,21 @@ local DEFAULTS = {
     questBar = true,         -- the separate bar's completed quest XP segment
     restedBar = true,        -- and its rested XP segment
 
+    showLevelText = true,    -- the level on the left of the separate bar
     showXPText = true,       -- current and max XP in the middle of the separate bar
+    showPctText = true,      -- the percentage on its right
     showLevelTime = true,
     showSessionTime = true,
     showXPHour = true,
     showQuestRested = true,
+    -- The size of each of the separate bar's texts, in percent.
+    levelSize = 100,
+    xpSize = 100,
+    pctSize = 100,
+    levelTimeSize = 100,
+    sessionTimeSize = 100,
+    xpHourSize = 100,
+    questRestedSize = 100,
     resetOnReload = false,
     font = "GameFontNormal", -- a name from FONT_OBJECTS
     fontOutline = true,
@@ -142,16 +155,26 @@ local skinTarget, skinFill
 
 -- The text lines. size and y offset are for BASE_HEIGHT; ApplyTextSize rescales them for the view's
 -- height. around marks the lines outside the bar, which the skin view leaves out: the default bar has
--- the action bars right under it and its end caps over its ends.
+-- the action bars right under it and its end caps over its ends. sizeKey is the line's Text Size
+-- setting on the separate bar, skinSizeKey on the default bar. grow moves a line by that much of what
+-- its size setting adds, so the lines above and below the bar grow away from it rather than into it.
 local TEXTS = {
-    { name = "levelText",   size = 16, point = "LEFT",     relPoint = "LEFT",        x = 5,  y = 0 },
-    { name = "xpText",      size = 14, point = "CENTER",   relPoint = "CENTER",      x = 0,  y = 0 },
-    { name = "pctText",     size = 16, point = "RIGHT",    relPoint = "RIGHT",       x = -5, y = 0 },
-    { name = "levelInText", size = 14, point = "LEFT",     relPoint = "BOTTOMLEFT",  x = 0,  y = -18, around = true },
-    { name = "qrText",      size = 14, point = "RIGHT",    relPoint = "BOTTOMRIGHT", x = 0,  y = -18, around = true },
-    { name = "levelTime",   size = 14, point = "TOPLEFT",  relPoint = "TOPLEFT",     x = 0,  y = 24,  around = true },
-    { name = "sessionTime", size = 14, point = "TOPRIGHT", relPoint = "TOPRIGHT",    x = 0,  y = 24,  around = true },
+    { name = "levelText",   size = 16, point = "LEFT",     relPoint = "LEFT",        x = 5,  y = 0,
+      sizeKey = "levelSize", skinSizeKey = "defaultLeftSize" },
+    { name = "xpText",      size = 14, point = "CENTER",   relPoint = "CENTER",      x = 0,  y = 0,
+      sizeKey = "xpSize", skinSizeKey = "defaultCentreSize" },
+    { name = "pctText",     size = 16, point = "RIGHT",    relPoint = "RIGHT",       x = -5, y = 0,
+      sizeKey = "pctSize", skinSizeKey = "defaultRightSize" },
+    { name = "levelInText", size = 14, point = "LEFT",     relPoint = "BOTTOMLEFT",  x = 0,  y = -18, around = true,
+      sizeKey = "xpHourSize", grow = -0.5 },
+    { name = "qrText",      size = 14, point = "RIGHT",    relPoint = "BOTTOMRIGHT", x = 0,  y = -18, around = true,
+      sizeKey = "questRestedSize", grow = -0.5 },
+    { name = "levelTime",   size = 14, point = "TOPLEFT",  relPoint = "TOPLEFT",     x = 0,  y = 24,  around = true,
+      sizeKey = "levelTimeSize", grow = 1 },
+    { name = "sessionTime", size = 14, point = "TOPRIGHT", relPoint = "TOPRIGHT",    x = 0,  y = 24,  around = true,
+      sizeKey = "sessionTimeSize", grow = 1 },
 }
+local MIN_TEXT_SIZE, MAX_TEXT_SIZE = 50, 200 -- percent, for the Text Size settings
 
 -- A view may also carry its own look, for the setup wizard's previews: themeKey (a theme of its own),
 -- opts (its own effect settings, rounding included) and textMode ("all" or "none": the lines around
@@ -245,6 +268,15 @@ local function FontFile(key)
     if type(file) == "string" and file ~= "" then return file end
 end
 
+-- A line's Text Size setting on this view, as a factor: 1 when unset or not a number, and on the
+-- wizard's previews, which show the usual look whatever the settings say.
+local function TextSizeFactor(v, spec)
+    if v.preview then return 1 end
+    local key = v.skinned and spec.skinSizeKey or spec.sizeKey
+    local pct = key and tonumber(db[key]) or 100
+    return min(MAX_TEXT_SIZE, max(MIN_TEXT_SIZE, pct)) / 100
+end
+
 -- Text size, font and outline. A font the client cannot load (SetFont gives false) falls back to the
 -- game's normal one rather than leaving the text blank.
 local function ApplyTextSize(v)
@@ -252,9 +284,10 @@ local function ApplyTextSize(v)
     local file, flags = FontFile(db.font) or FONT, db.fontOutline and "OUTLINE" or ""
     for _, t in ipairs(v.texts) do
         local s = t.spec
-        local size = floor(s.size * k + 0.5)
+        local base = floor(s.size * k + 0.5)
+        local size = max(1, floor(s.size * k * TextSizeFactor(v, s) + 0.5))
         if t.fs:SetFont(file, size, flags) == false then t.fs:SetFont(FONT, size, flags) end
-        t.fs:SetPoint(s.point, v.frame, s.relPoint, s.x, s.y * k)
+        t.fs:SetPoint(s.point, v.frame, s.relPoint, s.x, s.y * k + (size - base) * (s.grow or 0))
     end
 end
 
@@ -654,7 +687,11 @@ local function UpdateSessionTexts()
         v.sessionTime:SetShown(around and (all or db.showSessionTime))
         v.levelInText:SetShown(around and (all or db.showXPHour) and not maxed)
         v.qrText:SetShown(around and (all or db.showQuestRested) and not maxed)
-        if not v.skinned then v.xpText:SetShown(v.preview or db.showXPText) end
+        if not v.skinned then
+            v.levelText:SetShown(v.preview or db.showLevelText)
+            v.xpText:SetShown(v.preview or db.showXPText)
+            v.pctText:SetShown(v.preview or db.showPctText)
+        end
     end
 
     SetText("levelTime", maxed and ("Time played: " .. stats.played) or ("Time this level: " .. stats.levelTime))
@@ -1563,7 +1600,9 @@ local SETTING_APPLY = {
     defaultTooltip = function()
         if skin and GameTooltip:IsOwned(skin.frame) then GameTooltip:Hide() end
     end,
+    showLevelText = UpdateSessionTexts,
     showXPText = UpdateSessionTexts,
+    showPctText = UpdateSessionTexts,
     showLevelTime = UpdateSessionTexts,
     showSessionTime = UpdateSessionTexts,
     showXPHour = UpdateSessionTexts,
@@ -1579,6 +1618,11 @@ local SETTING_APPLY = {
     rounding = ApplyRoundingAll,
     segments = ApplySegmentsAll,
 }
+-- Each text line's size settings, on either bar.
+for _, spec in ipairs(TEXTS) do
+    if spec.sizeKey then SETTING_APPLY[spec.sizeKey] = ApplyTextAll end
+    if spec.skinSizeKey then SETTING_APPLY[spec.skinSizeKey] = ApplyTextAll end
+end
 
 -- Any change shows a faded bar again, so the change can be seen.
 function Core.OnSettingChanged(key)
