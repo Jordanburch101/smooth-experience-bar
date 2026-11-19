@@ -183,7 +183,7 @@ setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n
 size_sliders = [i for i in items if i.kind == "dropdown" and i.frame.SizeSlider]
 covered = (sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown"))
            + 2 * sum(1 for i in items if i.kind == "checkboxslider") + len(size_sliders))
-check(covered == setting_count == 53, f"a control for every setting ({covered} of {setting_count})")
+check(covered == setting_count == 54, f"a control for every setting ({covered} of {setting_count})")
 # Each bar has its own section, shown only while that bar is used.
 shown_rows = lambda: {i.key or i.name for i in G.__settingsRows().values() if i.frame.shown}
 bars_dd = next(i for i in items if i.kind == "dropdown" and i.key == "bars")
@@ -250,7 +250,7 @@ for cmd in ["unlock", "lock", "reset", "session"]:
 print("== every setting toggled off and back on")
 for key in ["showLevelText", "showXPText", "showPctText", "showLevelTime", "showSessionTime", "showXPHour", "showQuestRested", "waves", "swirl", "bubbles",
             "sparkles", "ambient", "lightning", "restedGlow", "flash", "glass", "rounding", "segments", "fontOutline", "locked", "hideBlizzardBar", "defaultLabels", "defaultTooltip", "questBar", "restedBar", "defaultQuestBar",
-            "defaultRestedBar", "resetOnReload", "showMaxLevel", "fadeIdle"]:
+            "defaultRestedBar", "resetOnReload", "showMaxLevel", "fadeIdle", "trackedQuestsOnly"]:
     default = G.__settings[key].GetValue(G.__settings[key])
     lua.execute(f"__settings[{key!r}]:SetValue({str(not default).lower()})")
     step(f"{key}={not default}", "SlashCmdList.SMOOTHEXPERIENCEBAR('test')", 1)
@@ -474,6 +474,44 @@ for item in items:
         item.onClick()
 check((db.width, db.height, db.scale) == (600, 30, 0.65) and db.point[1] == "TOP", "reset position, size and scale")
 
+print("== tracked quests only")
+lua.eval("""function(L)
+    __absorbs = 0
+    local absorb = L.Absorb
+    L.Absorb = function(...) __absorbs = __absorbs + 1; return absorb(...) end
+end""")(ns.Liquid)
+lua.execute("""
+    SlashCmdList.SMOOTHEXPERIENCEBAR('test off')
+    __quests = { { id = 21, xp = 10000, complete = true, watched = true }, { id = 22, xp = 20000, complete = true },
+                 { id = 23, xp = 40000 } }
+    __fire('QUEST_LOG_UPDATE')
+""")
+check("9.6%|r - Rested" in step("tracked only off", None, 2), "tracked quests only off: every completed quest counted")
+check("3.2%|r - Rested" in step("tracked only on", "__settings.trackedQuestsOnly:SetValue(true)", 2),
+      "tracked quests only: an untracked completed quest left out")
+check(G.__absorbs == 0, "tracked quests only: leaving quests out plays no turn-in")
+check("9.6%|r - Rested" in step("quest tracked", "__quests[2].watched = true; __fire('QUEST_WATCH_LIST_CHANGED')", 2),
+      "tracked quests only: tracking a quest adds its XP")
+check("3.2%|r - Rested" in step("quest untracked", "__quests[2].watched = nil; __fire('QUEST_WATCH_LIST_CHANGED')", 2)
+      and G.__absorbs == 0, "tracked quests only: untracking takes its XP off without a turn-in")
+check("3.2%|r - Rested" in step("untracked turned in", "__fire('QUEST_TURNED_IN', 22, 20000, 0)", 0.1),
+      "tracked quests only: handing in an untracked quest leaves the tracked XP")
+lua.execute("table.remove(__quests, 2); __fire('QUEST_LOG_UPDATE')")
+run(1)
+step("tracked turned in", "__fire('QUEST_TURNED_IN', 21, 10000, 0)", 0.1)
+check(G.__absorbs > 0 and "3.2%|r - Rested" not in state(), "tracked quests only: handing in a tracked quest plays the turn-in")
+# A turn-in and an untrack in the same scan: the turn-in still plays, for its own XP only.
+lua.execute("""
+    __quests = { { id = 31, xp = 10000, complete = true, watched = true }, { id = 32, xp = 20000, complete = true, watched = true } }
+    __fire('QUEST_LOG_UPDATE')
+""")
+check("9.6%|r - Rested" in step("two tracked", None, 2), "tracked quests only: both tracked quests counted")
+lua.execute("__absorbs = 0; __quests = { { id = 32, xp = 20000, complete = true } }; __fire('QUEST_LOG_UPDATE')")
+check("Completed: |cFFFF97000%|r" in step("turn-in and untrack", None, 2) and G.__absorbs > 0,
+      "tracked quests only: a turn-in in the same scan as an untrack still plays")
+lua.execute("__settings.trackedQuestsOnly:SetValue(false); __quests = {}; __fire('QUEST_LOG_UPDATE')")
+run(2)
+
 print("== Forever")
 bad = lua.eval("""function()
     local bad = {}
@@ -504,6 +542,12 @@ lua.execute("""
     __fire('QUEST_LOG_UPDATE')
 """)
 check("|cFFFF97004.8%" in step("modern quest log", None, 2), "modern quest log: done and ready quests counted, hidden ones not")
+lua.execute("""
+    C_QuestLog.GetQuestWatchType = function(id) if id == 11 then return 0 end end
+    __settings.trackedQuestsOnly:SetValue(true)
+""")
+check("|cFFFF97002.9%" in step("modern tracked only", None, 2), "modern quest log: tracked quests only counts watched quests")
+lua.execute("__settings.trackedQuestsOnly:SetValue(false)")
 
 # Forever has no MainMenuExpBar; its bars sit in StatusTrackingBarManager.barContainers and the UI
 # shows them with SetShown rather than Show.

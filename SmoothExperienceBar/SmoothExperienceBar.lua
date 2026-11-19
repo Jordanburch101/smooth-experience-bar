@@ -68,6 +68,7 @@ local DEFAULTS = {
 
     questBar = true,         -- the separate bar's completed quest XP segment
     restedBar = true,        -- and its rested XP segment
+    trackedQuestsOnly = false, -- completed quest XP counts only quests on the quest tracker
 
     showLevelText = true,    -- the level on the left of the separate bar
     showXPText = true,       -- current and max XP in the middle of the separate bar
@@ -488,6 +489,8 @@ end
 --------------------------------------------------------------------------------
 
 local questXP = 0
+-- The quests counted in questXP at the last scan: quest ID to its XP.
+local questsCounted = {}
 local sim -- table while /seb test is active, nil for live data
 local maxed = false -- at max level with "Show at Max Level" on
 
@@ -530,49 +533,74 @@ local IsQuestComplete = (C_QuestLog and C_QuestLog.IsComplete) or IsQuestComplet
 
 -- Selecting entries fires QUEST_LOG_UPDATE, so scans we trigger ourselves are ignored briefly.
 local ignoreQuestUpdatesUntil = 0
+local QueueQuestScan -- with the events
+
+-- Tracked Quests Only: whether a quest is on the quest tracker. The watch functions are looked up
+-- at each call, as Questie replaces IsQuestWatched on Era and Anniversary with its own tracker's.
+local function QuestTracked(questID, logIndex)
+    if logIndex and IsQuestWatched then return IsQuestWatched(logIndex) and true or false end
+    if questID and C_QuestLog and C_QuestLog.GetQuestWatchType then
+        return C_QuestLog.GetQuestWatchType(questID) ~= nil
+    end
+    return true -- no way to tell: count it
+end
+
+-- Adds a completed quest to a scan, or notes it as left out for not being tracked.
+local function CountQuest(scan, key, xp, tracked)
+    if tracked then
+        scan.total = scan.total + (xp or 0)
+        scan.counted[key] = xp or 0
+    else
+        scan.untracked[key] = true
+    end
+end
 
 -- Forever runs the modern quest log API; the classic functions below are missing there.
-local function ScanQuestXPModern()
-    local total = 0
+local function ScanQuestXPModern(scan)
     for i = 1, C_QuestLog.GetNumQuestLogEntries() do
         local info = C_QuestLog.GetInfo(i)
         local questID = info and not info.isHeader and not info.isHidden and info.questID
         if questID and questID > 0 and (C_QuestLog.IsComplete(questID)
             or (C_QuestLog.ReadyForTurnIn and C_QuestLog.ReadyForTurnIn(questID))) then
-            total = total + (GetQuestLogRewardXP(questID) or 0)
+            CountQuest(scan, questID, GetQuestLogRewardXP(questID),
+                not db.trackedQuestsOnly or QuestTracked(questID))
         end
     end
-    return total
+    return scan
 end
 
+-- The XP of the completed quests to show (total), the quests counted in it with their XP, and the
+-- completed quests left out as untracked, keyed by quest ID.
 local function ScanQuestXP()
-    if not GetQuestLogRewardXP then return 0 end
+    local scan = { total = 0, counted = {}, untracked = {} }
+    if not GetQuestLogRewardXP then return scan end
     if not GetQuestLogTitle then
-        if C_QuestLog and C_QuestLog.GetInfo then return ScanQuestXPModern() end
-        return 0
+        if C_QuestLog and C_QuestLog.GetInfo then return ScanQuestXPModern(scan) end
+        return scan
     end
-    local total, reselected = 0, false
+    local reselected = false
     local previous = GetQuestLogSelection and GetQuestLogSelection()
     for i = 1, GetNumQuestLogEntries() do
         local _, _, _, isHeader, _, isComplete, _, questID = GetQuestLogTitle(i)
         local complete = isComplete == 1 or isComplete == true
             or (questID and questID > 0 and IsQuestComplete and IsQuestComplete(questID))
         if not isHeader and complete then
+            local tracked = not db.trackedQuestsOnly or QuestTracked(questID, i)
             local xp = questID and GetQuestLogRewardXP(questID)
-            if not xp or xp == 0 then
+            if tracked and (not xp or xp == 0) then
                 -- Older signature only reads the selected entry.
                 SelectQuestLogEntry(i)
                 reselected = true
                 xp = GetQuestLogRewardXP()
             end
-            total = total + (xp or 0)
+            CountQuest(scan, questID or i, xp, tracked)
         end
     end
     if reselected then
         if previous and previous > 0 then SelectQuestLogEntry(previous) end
         ignoreQuestUpdatesUntil = GetTime() + 0.5
     end
-    return total
+    return scan
 end
 
 --------------------------------------------------------------------------------
@@ -1597,6 +1625,7 @@ local SETTING_APPLY = {
     defaultRestedBar = RenderBar,
     questBar = RenderBar,
     restedBar = RenderBar,
+    trackedQuestsOnly = function() QueueQuestScan(true) end,
     defaultTooltip = function()
         if skin and GameTooltip:IsOwned(skin.frame) then GameTooltip:Hide() end
     end,
@@ -1830,14 +1859,29 @@ end
 
 local questScanQueued = false
 
-local function QueueQuestScan()
-    if questScanQueued or GetTime() < ignoreQuestUpdatesUntil then return end
+local function ScanQuests()
+    questScanQueued = false
+    local scan = ScanQuestXP()
+    -- Quests counted before and now left out as untracked leave without a turn-in: their XP comes
+    -- off what the bar last showed, so Refresh only sees quests handed in or abandoned as a drop,
+    -- and off the end of a turn-in pour, so the orange can shrink during one.
+    local untrackedXP = 0
+    for key, xp in pairs(questsCounted) do
+        if scan.untracked[key] then untrackedXP = untrackedXP + xp end
+    end
+    questXP, questsCounted = scan.total, scan.counted
+    if untrackedXP > 0 and not sim and A.ready then
+        T.quest = max(0, T.quest - untrackedXP)
+        if A.pourEnd then A.pourEnd = max(A.fill, A.pourEnd - untrackedXP / T.max) end
+    end
+    Refresh()
+end
+
+-- watchChanged: the tracked quests or the setting changed, which our own scans never cause.
+function QueueQuestScan(watchChanged)
+    if questScanQueued or (not watchChanged and GetTime() < ignoreQuestUpdatesUntil) then return end
     questScanQueued = true
-    C_Timer.After(0.25, function()
-        questScanQueued = false
-        questXP = ScanQuestXP()
-        Refresh()
-    end)
+    C_Timer.After(0.25, ScanQuests)
 end
 
 -- Up to 1.3 the bars were two checkboxes, Show Separate Bar and Use Default Experience Bar, and the
@@ -1965,8 +2009,10 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         UpdateSessionTexts()
 
     elseif event == "QUEST_TURNED_IN" then
-        -- arg2 is the XP reward; drop it now rather than waiting for the quest log rescan.
-        if arg2 and not Secret(arg2) and arg2 > 0 and questXP > 0 then
+        -- arg2 is the XP reward; drop it now rather than waiting for the quest log rescan. An
+        -- untracked quest's XP was never on the bar.
+        if arg2 and not Secret(arg2) and arg2 > 0 and questXP > 0
+            and (not db.trackedQuestsOnly or (not Secret(arg1) and questsCounted[arg1])) then
             questXP = max(0, questXP - arg2)
             Refresh()
         end
@@ -1974,6 +2020,9 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
 
     elseif event == "QUEST_LOG_UPDATE" then
         QueueQuestScan()
+
+    elseif event == "QUEST_WATCH_LIST_CHANGED" then
+        if db.trackedQuestsOnly then QueueQuestScan(true) end
 
     elseif event == "PLAYER_LEVEL_UP" then
         if played.at > 0 then played.total = played.total + time() - played.at end
@@ -1998,6 +2047,7 @@ bar:RegisterEvent("UPDATE_EXHAUSTION")
 bar:RegisterEvent("PLAYER_UPDATE_RESTING")
 bar:RegisterEvent("QUEST_LOG_UPDATE")
 bar:RegisterEvent("QUEST_TURNED_IN")
+bar:RegisterEvent("QUEST_WATCH_LIST_CHANGED")
 bar:RegisterEvent("TIME_PLAYED_MSG")
 -- On a frame of its own, so the animation runs whichever views are shown.
 local driver = CreateFrame("Frame")

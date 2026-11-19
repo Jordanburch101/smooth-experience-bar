@@ -368,6 +368,12 @@ function GetQuestLogRewardXP(id)
     for _, q in ipairs(__quests) do if q.id == id then return q.xp end end
     return 0
 end
+-- Takes a quest log index, not a quest ID, like the client.
+function IsQuestWatched(i)
+    assert(type(i) == "number", "Usage: IsQuestWatched(questLogIndex)")
+    local q = __quests[i]
+    return q and q.watched and 1 or nil
+end
 function GetQuestLogSelection() return 0 end
 function SelectQuestLogEntry() end
 function IsQuestComplete() return false end

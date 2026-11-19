@@ -6,6 +6,16 @@ is none. Write for players: what they can now do or see, and what was
 broken and now works. Leave out internal changes. Sections are
 `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.8.0
+
+### New
+- Tracked Quests Only (General, off to start with): completed quest XP
+  counts only quests on your quest tracker, in the bar, its text and the
+  tooltip. Tracking or untracking a quest in the game's tracker updates the
+  bar straight away. With Questie, its tracker decides. On Era and
+  Anniversary the game untracks quests it tracked for you 5 minutes after
+  their last update, and quests with no objectives can't be tracked.
+
 ## 1.7.0
 
 ### New

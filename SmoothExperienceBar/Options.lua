@@ -318,6 +318,9 @@ function Options.Register(savedDB, defaultValues)
     Dropdown(Register("font", "Font"), "Font of the bar's text, from the game's own fonts.", FontOptions)
     Checkbox("fontOutline", "Font Outline", "A dark outline around the text. Untick for a plain drop shadow.")
     Checkbox("showMaxLevel", "Show at Max Level", "Keep the bar visible at max level, showing time played.")
+    Checkbox("trackedQuestsOnly", "Tracked Quests Only", "Count completed quest XP only for quests on your "
+        .. "quest tracker. On Era and Anniversary the game untracks quests it tracked for you 5 minutes after "
+        .. "their last update, and quests with no objectives can't be tracked.")
     Checkbox("resetOnReload", "Reset Session on Reload", "Restart session time and XP/hour on /reload as well as on login.")
 
     Header("Separate Bar", SeparateUsed)
