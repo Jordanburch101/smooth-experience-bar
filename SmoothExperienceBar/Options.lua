@@ -36,13 +36,15 @@ local LayoutRows
 -- The section rows go in: a section for one of the bars shows only while that bar is used, so the
 -- page follows the Experience Bar choice. when is a function saying whether its rows show.
 local section
+-- The settings that decide which rows show; changing one lays the page out again.
+local LAYOUT_KEYS = { bars = true, repBar = true, separateTracks = true }
 
 local function Register(key, name)
     local default = defaults[key]
     local setting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_" .. key, key, db, type(default), name, default)
     setting:SetValueChangedCallback(function(_, value)
         ns.Core.OnSettingChanged(key, value)
-        if key == "bars" then LayoutRows() end
+        if LAYOUT_KEYS[key] then LayoutRows() end
         if watchers[key] then watchers[key](value) end
     end)
     registered[key] = setting
@@ -124,8 +126,8 @@ local function TextRow(showKey, name, tooltip, sizeKey)
     end
 end
 
-local function Dropdown(setting, tooltip, getOptions)
-    Row(Settings.CreateDropdownInitializer(setting, getOptions, tooltip))
+local function Dropdown(setting, tooltip, getOptions, when)
+    Row(Settings.CreateDropdownInitializer(setting, getOptions, tooltip), nil, when)
 end
 
 -- One of the default bar's texts: what shows there, and its size beside it, greyed out while it
@@ -176,8 +178,8 @@ end
 
 -- The fifth argument is whether the row adds search tags; the game asserts it is given, and a
 -- canvas has nothing for the search to find.
-local function Button(name, text, onClick, tooltip)
-    Row(CreateSettingsButtonInitializer(name, text, onClick, tooltip, false))
+local function Button(name, text, onClick, tooltip, when)
+    Row(CreateSettingsButtonInitializer(name, text, onClick, tooltip, false), nil, when)
 end
 
 -- Which bars are used, as the setup wizard asks it.
@@ -196,6 +198,24 @@ end
 local function SeparateUsed() return db.bars ~= "default" end
 local function DefaultUsed() return db.bars ~= "separate" end
 local function SeparateOnly() return db.bars == "separate" end
+local function SeparateTracksRep() return SeparateUsed() and db.separateTracks ~= "xp" end
+-- The reputation theme and text are for either reputation bar.
+local function RepUsed() return db.repBar or SeparateTracksRep() end
+-- A reputation bar shows now (the separate bar set to reputation at max level only counts there).
+local function RepShowing() return ns.Core.RepShowing() end
+
+-- What the separate bar tracks.
+local TRACKS = {
+    { "xp", "Experience" },
+    { "rep", "Reputation" },
+    { "auto", "Experience, Reputation at Max Level" },
+}
+
+local function TrackOptions()
+    local container = Settings.CreateControlTextContainer()
+    for _, track in ipairs(TRACKS) do container:Add(track[1], track[2]) end
+    return container:GetData()
+end
 
 -- Hovering a theme in the open menu shows it on the bar; the menu calls onEnter with the option.
 local function PreviewOption(option)
@@ -207,6 +227,27 @@ local function ThemeOptions()
     for _, key in ipairs(ns.Themes.order) do
         local option = container:Add(key, ns.Themes.list[key].name)
         if option then option.onEnter = PreviewOption end
+    end
+    return container:GetData()
+end
+
+local function PreviewRepOption(option)
+    ns.Core.PreviewRepTheme(option.value)
+end
+
+local function RepThemeOptions()
+    local container = Settings.CreateControlTextContainer()
+    for _, theme in ipairs(ns.Core.RepThemes()) do
+        local option = container:Add(theme.key, theme.name)
+        if option then option.onEnter = PreviewRepOption end
+    end
+    return container:GetData()
+end
+
+local function RepSlotOptions()
+    local container = Settings.CreateControlTextContainer()
+    for _, slot in ipairs(ns.Core.RepSlots()) do
+        container:Add(slot.key, slot.name)
     end
     return container:GetData()
 end
@@ -310,19 +351,34 @@ function Options.Register(savedDB, defaultValues)
     BuildPage(title)
     category = Settings.RegisterCanvasLayoutCategory(canvas, title)
 
-    Header("General")
-    Dropdown(Register("bars", "Experience Bar"), "Where your experience shows: a separate bar you move and "
-        .. "resize, the game's own experience bar filled with the liquid, or both. Each has its settings below.",
-        BarOptions)
-    Dropdown(Register("theme", "Theme"), "Colours and effects of the bar.", ThemeOptions)
-    Dropdown(Register("font", "Font"), "Font of the bar's text, from the game's own fonts.", FontOptions)
+    -- Which bars show and what each tracks, then how they look, then each bar's own settings.
+    Header("Bars")
+    Dropdown(Register("bars", "Bars"), "Which bars show your experience: a separate bar you move and resize, the "
+        .. "game's own experience bar filled with the liquid, or both. Each has its section below.", BarOptions)
+    Dropdown(Register("separateTracks", "Separate Bar Tracks"), "What the separate bar shows: your experience, "
+        .. "the faction you watch (tick Show as Experience Bar for one in the Reputation panel), or experience "
+        .. "until max level and reputation from then on.", TrackOptions, SeparateUsed)
+    Checkbox("repBar", "Default Reputation Bar", "Fill the game's own reputation bar with the liquid. The game "
+        .. "shows it while you watch a faction: tick Show as Experience Bar for one in the Reputation panel.")
+
+    Header("Look")
+    Dropdown(Register("theme", "Experience Theme"), "Colours and effects of the experience bars.", ThemeOptions)
+    Dropdown(Register("repTheme", "Reputation Theme"), "Colours and effects of reputation, on the game's "
+        .. "reputation bar and on the separate bar while it tracks reputation. Standing Colours takes the game's "
+        .. "colour for your standing, from red at Hated to green from Friendly up.", RepThemeOptions, RepUsed)
+    Dropdown(Register("font", "Font"), "Font of the bars' text, from the game's own fonts.", FontOptions)
     Checkbox("fontOutline", "Font Outline", "A dark outline around the text. Untick for a plain drop shadow.")
-    Checkbox("showMaxLevel", "Show at Max Level", "Keep the bar visible at max level, showing time played.")
+
+    Header("Experience")
+    Checkbox("showMaxLevel", "Show at Max Level", "Keep the experience bars visible at max level, showing time "
+        .. "played.")
     Checkbox("trackedQuestsOnly", "Tracked Quests Only", "Count completed quest XP only for quests on your "
         .. "quest tracker. On Era and Anniversary the game untracks quests it tracked for you 5 minutes after "
         .. "their last update, and quests with no objectives can't be tracked.")
-    Checkbox("resetOnReload", "Reset Session on Reload", "Restart session time and XP/hour on /reload as well as on login.")
+    Checkbox("resetOnReload", "Reset Session on Reload", "Restart the session (its time, XP/hour, and reputation "
+        .. "gained and per hour) on /reload as well as on login.")
 
+    local repText = " While the bar tracks reputation, its text comes from the Reputation section."
     Header("Separate Bar", SeparateUsed)
     SubHeader("Size & Position")
     Checkbox("locked", "Lock Bar", "Untick to move the bar by dragging it and resize it from the corner grip.")
@@ -330,27 +386,33 @@ function Options.Register(savedDB, defaultValues)
     Slider("width", "Width", "Bar width. Also set by dragging the corner grip while unlocked.", 200, 1600, 10, "%d")
     Slider("height", "Height", "Bar height; text scales with it.", 16, 60, 1, "%d")
     Button("Reset Position & Size", "Reset", Core.ResetPosition, "Move the bar back to the top of the screen at its default size.")
-    SubHeader("Text")
-    TextRow("showLevelText", "Level", "Your level on the left of the bar.", "levelSize")
-    TextRow("showXPText", "XP", "Current and max XP, and the XP still to go, in the middle of the bar.", "xpSize")
-    TextRow("showPctText", "Percentage", "How far through the level you are, on the right of the bar.", "pctSize")
-    TextRow("showLevelTime", "Time This Level", "Played time at this level above the bar (total played at max level).",
-        "levelTimeSize")
+    SubHeader("Text in the Bar")
+    TextRow("showLevelText", "Level", "Your level on the left of the bar." .. repText, "levelSize")
+    TextRow("showXPText", "XP", "Current and max XP, and the XP still to go, in the middle of the bar." .. repText,
+        "xpSize")
+    TextRow("showPctText", "Percentage", "How far through the level you are, on the right of the bar." .. repText,
+        "pctSize")
+    SubHeader("Lines Around the Bar")
+    TextRow("showLevelTime", "Time This Level", "Played time at this level above the bar (total played at max "
+        .. "level). While the bar tracks reputation: reputation gained this session.", "levelTimeSize")
     TextRow("showSessionTime", "Session Time", "Time since you logged in, above the bar.", "sessionTimeSize")
-    TextRow("showXPHour", "Leveling Time & XP/Hour", "Estimated time to level from this session's XP rate, under the bar.",
+    TextRow("showXPHour", "Leveling Time & XP/Hour", "Estimated time to level from this session's XP rate, under "
+        .. "the bar. While the bar tracks reputation: the time to the next standing and reputation per hour.",
         "xpHourSize")
-    TextRow("showQuestRested", "Completed & Rested",
-        "Completed quest XP and rested XP as a percentage of the level, under the bar.", "questRestedSize")
+    TextRow("showQuestRested", "Completed & Rested", "Completed quest XP and rested XP as a percentage of the "
+        .. "level, under the bar. While the bar tracks reputation: what is left to Exalted.", "questRestedSize")
     SubHeader("Bar")
     Checkbox("questBar", "Completed Quest Bar", "The XP of quests ready to turn in, shown after your XP in the bar.")
     Checkbox("restedBar", "Rested Bar", "Your rested XP, shown after your XP (and completed quests) in the bar.")
     Checkbox("rounding", "Rounded Liquid", "Shade the top and bottom of the bar so the liquid looks round.")
     Checkbox("segments", "Segmented Bar", "Divide the bar into 20 segments, like the game's experience bar.")
-    Checkbox("hideBlizzardBar", "Hide Default Experience Bar", "Hide the game's own experience bar.", SeparateOnly)
+    Checkbox("hideBlizzardBar", "Hide Default Experience Bar", "Hide the game's own experience bar. Not while "
+        .. "Default Reputation Bar is on: the game keeps its reputation bar with it.",
+        function() return SeparateOnly() and not db.repBar end)
     SubHeader("Fade")
     Checkbox("fadeIdle", "Fade When Idle", "Fade the bar after a while. Hover over it to reveal it; it also "
-        .. "comes back when you gain XP, in or out of combat.")
-    Slider("fadeDelay", "Fade After", "Seconds since the last XP gain or hover before the bar fades.",
+        .. "comes back when you gain XP (or reputation, while it tracks reputation), in or out of combat.")
+    Slider("fadeDelay", "Fade After", "Seconds since the last gain or hover before the bar fades.",
         2, 30, 1, "%ds")
     Slider("fadeOpacity", "Faded Opacity", "How visible the bar stays once faded. 0% hides it until you hover over it.",
         0, 90, 5, "%d%%")
@@ -369,16 +431,28 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("defaultTooltip", "Tooltip",
         "Hover the bar for the rest of the numbers: completed and rested XP, session time, XP/hour and the time to level.")
 
+    -- The text in either reputation bar: the game's, and the separate bar while it tracks reputation.
+    Header("Reputation", RepUsed)
+    local repSlotHelp = " On the game's reputation bar, and in the separate bar while it tracks reputation."
+        .. " Reputation, Percentage and To Next Standing are left out at the top standing."
+    SlotRow("repLeft", "Left Text", "What shows on the left of the bar." .. repSlotHelp, RepSlotOptions, "repLeftSize")
+    SlotRow("repCentre", "Centre Text", "What shows in the middle of the bar. While anything shows there, "
+        .. "the game's own reputation text is hidden so the two do not overlap." .. repSlotHelp, RepSlotOptions,
+        "repCentreSize")
+    SlotRow("repRight", "Right Text", "What shows on the right of the bar." .. repSlotHelp, RepSlotOptions, "repRightSize")
+    Checkbox("repTooltip", "Tooltip", "Hover a reputation bar for your standing, reputation, what is left to "
+        .. "the next standing and to Exalted, and this session's gains, time and reputation per hour.")
+
     Header("Animation")
     Slider("speed", "Fill Speed", "How quickly the liquid flows to its new level.", 0.5, 2, 0.1, "%.1fx")
-    Checkbox("waves", "Liquid Waves", "Wobbling liquid front that sloshes and ripples on XP gains.")
+    Checkbox("waves", "Liquid Waves", "Wobbling liquid front that sloshes and ripples on gains.")
     Checkbox("swirl", "Magic Swirl", "Glowing veins, clouds and light drifting inside the liquid.")
     Checkbox("bubbles", "Bubbles", "Bubbles rising through the liquid.")
-    Checkbox("sparkles", "Sparkles", "Motes thrown off by XP gains, quest turn-ins and level-ups.")
+    Checkbox("sparkles", "Sparkles", "Motes thrown off by gains, quest turn-ins, level-ups and new standings.")
     Checkbox("ambient", "Ambient Particles", "Embers, snow, spores, stars and the like from themes that have them.")
-    Checkbox("lightning", "Lightning", "Faint flashes in the liquid at rest that build into a storm with big or rapid XP gains.")
+    Checkbox("lightning", "Lightning", "Faint flashes in the liquid at rest that build into a storm with big or rapid gains.")
     Checkbox("restedGlow", "Rested Glow", "A soft glow in the liquid while you have rested XP.")
-    Checkbox("flash", "Level-Up Flash", "Flash the bar when you level up.")
+    Checkbox("flash", "Level-Up Flash", "Flash the bar when you level up or reach a new standing.")
     Checkbox("glass", "Glass", "Reflections along the bar, as if it were a glass tube.")
 
     -- Settings are saved per character. Pick another character, then copy their settings onto this one.
@@ -407,10 +481,17 @@ function Options.Register(savedDB, defaultValues)
     Button("Preview XP Gain", "Gain", function() Core.Test("gain") end, "Simulate an XP gain. Does not touch your real XP.")
     Button("Preview Quest Turn-In", "Turn In", function() Core.Test("turnin") end, "Simulate completing and turning in a quest.")
     Button("Preview Level-Up", "Level Up", function() Core.Test("level") end, "Simulate a level-up.")
-    Button("Stop Preview", "Stop", function() Core.Test("off") end, "Return the bar to your real XP.")
-    Button("Reset Session", "Reset", Core.ResetSession, "Restart session time and XP/hour.")
+    Button("Preview Reputation Gain", "Gain", function() Core.Test("rep") end,
+        "Simulate a reputation gain with the watched faction. Does not touch your real reputation.", RepShowing)
+    Button("Preview New Standing", "Standing Up", function() Core.Test("standing") end,
+        "Simulate reaching the next standing with the watched faction.", RepShowing)
+    Button("Stop Preview", "Stop", function() Core.Test("off") end, "Return the bars to your real XP and reputation.")
+    Button("Reset Session", "Reset", Core.ResetSession, "Restart the session: its time, XP/hour, and reputation "
+        .. "gained and per hour.")
     Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,
-        "Pick where the bar goes, its theme, effects and text again, with live previews.")
+        "Pick where the bars go, their themes, effects and text again, with live previews.")
+    Button("What's New", "Open", function() ns.WhatsNew.Open() end,
+        "What changed in this version and the ones before (also /seb changes).")
 
     LayoutRows()
     Settings.RegisterAddOnCategory(category)

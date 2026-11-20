@@ -9,12 +9,22 @@ broken and now works. Leave out internal changes. Sections are
 ## 1.8.0
 
 ### New
-- Tracked Quests Only (General, off to start with): completed quest XP
-  counts only quests on your quest tracker, in the bar, its text and the
-  tooltip. Tracking or untracking a quest in the game's tracker updates the
-  bar straight away. With Questie, its tracker decides. On Era and
-  Anniversary the game untracks quests it tracked for you 5 minutes after
-  their last update, and quests with no objectives can't be tracked.
+- **Reputation Bar**: the liquid in the game's reputation bar, in your
+  standing's colour or any theme. Turn it on under Bars, then watch a
+  faction (Show as Experience Bar in the Reputation panel).
+- **Separate Bar Tracks**: the separate bar can show reputation instead of
+  experience, always or from max level, with this session's gains and
+  reputation per hour around it.
+- **Tracked Quests Only**: count completed quest XP only for quests on your
+  quest tracker (Experience section).
+- **What's New**: a window with what changed, once after each update. Open
+  it again with `/seb changes`.
+- **Settings**: regrouped into Bars, Look, Experience and a section for
+  each bar. The setup wizard has a reputation step.
+
+### Fixed
+- **Default Experience Bar**: it stays when you watch a faction, and its
+  text stays clear of the gryphons.
 
 ## 1.7.0
 

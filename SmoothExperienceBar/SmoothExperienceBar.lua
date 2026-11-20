@@ -150,6 +150,9 @@ local theme = ns.Themes.Get(DEFAULTS.theme)
 -- bar (skin, Experience Bar: Default Experience Bar). Either or both can be shown. They share the XP and the
 -- animation state below; each has its own size, liquid and text.
 local views = {}
+-- Every view, those of other bars (the reputation bar, Reputation.lua) included: font, effect and
+-- rounding settings apply to them all, while the XP above is drawn only on views.
+local allViews = {}
 local main, skin
 -- The game's XP bar the skin view is drawn over, and the fill in it whose rect it covers.
 local skinTarget, skinFill
@@ -179,8 +182,9 @@ local MIN_TEXT_SIZE, MAX_TEXT_SIZE = 50, 200 -- percent, for the Text Size setti
 
 -- A view may also carry its own look, for the setup wizard's previews: themeKey (a theme of its own),
 -- opts (its own effect settings, rounding included) and textMode ("all" or "none": the lines around
--- the bar regardless of the settings). Without them it follows the settings.
-local function NewView(frame, width, height, skinned)
+-- the bar regardless of the settings). Without them it follows the settings. A detached view is
+-- another bar's: it is left out of views, and its owner draws it.
+local function NewView(frame, width, height, skinned, detached)
     local v = { frame = frame, width = width, height = height, skinned = skinned, rounded = false, texts = {},
                 theme = theme }
 
@@ -256,7 +260,8 @@ local function NewView(frame, width, height, skinned)
         v.texts[#v.texts + 1] = { fs = fs, spec = spec }
         v[spec.name] = fs
     end
-    views[#views + 1] = v
+    if not detached then views[#views + 1] = v end
+    allViews[#allViews + 1] = v
     return v
 end
 
@@ -270,16 +275,18 @@ local function FontFile(key)
 end
 
 -- A line's Text Size setting on this view, as a factor: 1 when unset or not a number, and on the
--- wizard's previews, which show the usual look whatever the settings say.
+-- wizard's previews, which show the usual look whatever the settings say. A view's sizeKeys (line
+-- name to setting) take the place of the lines' own, for another bar's settings.
 local function TextSizeFactor(v, spec)
     if v.preview then return 1 end
-    local key = v.skinned and spec.skinSizeKey or spec.sizeKey
+    local key = v.sizeKeys and v.sizeKeys[spec.name] or (v.skinned and spec.skinSizeKey or spec.sizeKey)
     local pct = key and tonumber(db[key]) or 100
     return min(MAX_TEXT_SIZE, max(MIN_TEXT_SIZE, pct)) / 100
 end
 
 -- Text size, font and outline. A font the client cannot load (SetFont gives false) falls back to the
 -- game's normal one rather than leaving the text blank.
+-- A view's insetL / insetR move its left and right text in, clear of the game's art over its ends.
 local function ApplyTextSize(v)
     local k = min(1.6, max(0.6, v.height / BASE_HEIGHT))
     local file, flags = FontFile(db.font) or FONT, db.fontOutline and "OUTLINE" or ""
@@ -288,7 +295,13 @@ local function ApplyTextSize(v)
         local base = floor(s.size * k + 0.5)
         local size = max(1, floor(s.size * k * TextSizeFactor(v, s) + 0.5))
         if t.fs:SetFont(file, size, flags) == false then t.fs:SetFont(FONT, size, flags) end
-        t.fs:SetPoint(s.point, v.frame, s.relPoint, s.x, s.y * k + (size - base) * (s.grow or 0))
+        local x = s.x
+        if s.point == "LEFT" then
+            x = x + (v.insetL or 0)
+        elseif s.point == "RIGHT" then
+            x = x - (v.insetR or 0)
+        end
+        t.fs:SetPoint(s.point, v.frame, s.relPoint, x, s.y * k + (size - base) * (s.grow or 0))
     end
 end
 
@@ -328,8 +341,14 @@ local barsWanted = true
 local function SeparateWanted() return db.bars ~= "default" end
 local function SkinWanted() return db.bars ~= "separate" end
 
+-- The other bar drawing on the separate bar (Reputation.lua, while it tracks reputation), or nil
+-- while it shows XP. Its Shown() says whether the bar shows; Fill() is how full it is.
+local lentTo
+
 local function ShowViews()
-    bar:SetShown(barsWanted and SeparateWanted())
+    local separate
+    if lentTo then separate = lentTo.Shown() else separate = barsWanted end
+    bar:SetShown(separate and SeparateWanted())
     if skin then skin.frame:SetShown(barsWanted and skinTarget ~= nil) end
 end
 
@@ -453,11 +472,11 @@ local function ApplyRounding(v)
 end
 
 local function ApplyRoundingAll()
-    for _, v in ipairs(views) do ApplyRounding(v) end
+    for _, v in ipairs(allViews) do ApplyRounding(v) end
 end
 
 local function ApplyLiquidOptions()
-    for _, v in ipairs(views) do v.liquid:ApplyOptions() end
+    for _, v in ipairs(allViews) do v.liquid:ApplyOptions() end
 end
 
 local previewTheme -- theme hovered in the settings theme picker; shown on the bar but never saved
@@ -1064,7 +1083,7 @@ local function Refresh()
     end
 
     if gained > 0 then
-        WakeBar()
+        if not lentTo then WakeBar() end -- lent, the bar shows another bar's gains
         -- sqrt so a single mob kill still ripples, while a big turn-in gets the full splash.
         local intensity = min(1, (gained / mx / ANIM.bigGain) ^ 0.5)
         for _, v in ipairs(views) do
@@ -1146,7 +1165,7 @@ end
 local function OnViewResized(v, w, h)
     v.width, v.height = w, h
     v.liquid:SetSize(w, h)
-    v.liquid:Snap(A.fill * w)
+    v.liquid:Snap((v.fillOf and v.fillOf() or A.fill) * w)
     ApplyTextSize(v)
     ApplySegments(v)
     ApplyRounding(v)
@@ -1154,11 +1173,11 @@ local function OnViewResized(v, w, h)
 end
 
 local function ApplyTextAll()
-    for _, v in ipairs(views) do ApplyTextSize(v) end
+    for _, v in ipairs(allViews) do ApplyTextSize(v) end
 end
 
 local function ApplySegmentsAll()
-    for _, v in ipairs(views) do ApplySegments(v) end
+    for _, v in ipairs(allViews) do ApplySegments(v) end
 end
 
 local function ApplySize()
@@ -1209,9 +1228,10 @@ local function BlizzardBars()
     return list
 end
 
--- Drawn over the default bar, the bar lives inside it, so hiding it would hide ours too.
+-- Drawn over the default bar, the bar lives inside it, so hiding it would hide ours too. The game keeps its
+-- reputation bar in the same frames, so the reputation bar drawn there keeps them too.
 local function HideWanted()
-    return db.hideBlizzardBar and not SkinWanted()
+    return db.hideBlizzardBar and not SkinWanted() and not db.repBar
 end
 
 local function ApplyBlizzardBar()
@@ -1248,29 +1268,51 @@ end
 -- only read, never changed: the view's frame becomes a child of the XP bar, so it shows, hides, moves
 -- and scales with it (Edit Mode included), and covers its fill from a higher frame level.
 
--- The default XP bar: the frame whose visibility we follow and the fill whose rect we cover. Forever
--- keeps its bars in StatusTrackingBarManager.barContainers[i].bars, each with a StatusBar; the
--- experience one is told apart by its index or its rested-XP parts. Era and Anniversary have
--- MainMenuExpBar, which is both.
-local function DefaultXPBar()
+-- One of the game's status bars ("Experience" or "Reputation"): the frame whose visibility we follow
+-- and the fill whose rect we cover. The game keeps them in StatusTrackingBarManager.barContainers[i]
+-- .bars, each with a StatusBar, told apart by their index (the XP one also by its rested-XP parts).
+-- Every container has its own bar of each kind, and the game shows each kind in whichever container
+-- its priorities give it: on Forever a watched faction ("Show as Experience Bar") takes the main one
+-- and XP moves up to the second. So the bar the game is showing wins; with none shown, current (the
+-- one in use), else the first. onShow runs when the game shows one of them, as it does on moving the
+-- kind to another container. Without the manager, the XP bar is MainMenuExpBar, which is both.
+local gameBarHooked = {}
+
+local function GameBar(kind, current, onShow)
     local manager = StatusTrackingBarManager
     if manager and type(manager.barContainers) == "table" then
         local enum = StatusTrackingBarInfo and StatusTrackingBarInfo.BarsEnum
-        local expIndex = enum and enum.Experience
+        local wanted = enum and enum[kind]
+        local first, inUse, shown
         for _, container in ipairs(manager.barContainers) do
             if type(container.bars) == "table" then
                 for index, b in pairs(container.bars) do
                     local fill = type(b) == "table" and b.StatusBar
-                    if fill and ((expIndex and (index == expIndex or b.barIndex == expIndex))
-                        or b.ExhaustionTick or b.ExhaustionLevelFillBar) then
-                        return b, fill
+                    if fill and ((wanted and (index == wanted or b.barIndex == wanted))
+                        or (kind == "Experience" and (b.ExhaustionTick or b.ExhaustionLevelFillBar))) then
+                        if not gameBarHooked[b] then
+                            gameBarHooked[b] = true
+                            hooksecurefunc(b, "Show", onShow)
+                        end
+                        first = first or b
+                        if b == current then inUse = b end
+                        if not shown and b:IsShown() then shown = b end
+                        break
                     end
                 end
             end
         end
+        local b = shown or inUse or first
+        if b then return b, b.StatusBar end
         return
     end
-    if MainMenuExpBar then return MainMenuExpBar, MainMenuExpBar end
+    if kind == "Experience" and MainMenuExpBar then return MainMenuExpBar, MainMenuExpBar end
+end
+
+local ApplySkin
+
+local function DefaultXPBar()
+    return GameBar("Experience", skinTarget, function() if SkinWanted() then ApplySkin() end end)
 end
 
 -- What the game has, for when the XP bar is not found: each container's bars and their parts.
@@ -1396,10 +1438,13 @@ end
 -- game's XP text is known by where it is (Forever's OverlayFrame.Text, the bar's TextString, Era's
 -- MainMenuBarExpText on another frame). Any other text under the XP bar, in case Forever keeps it
 -- elsewhere, is faded only while it reads like XP numbers ("3,582 / 27,216"), so other addons' text
--- there is left alone. Only alpha is changed, which the game does not use for these.
-local gameTexts, mutedTexts = {}, {} -- gameTexts: { fs, known }
+-- there is left alone. Only alpha is changed, which the game does not use for these. The same goes
+-- for the reputation bar's text. Each bar keeps its own state: list ({ fs, known }) and muted (each
+-- faded text's alpha before).
+local xpTexts = { list = {}, muted = {} }
 
-local function FindGameTexts(target)
+-- ours: our own frame on the bar, whose text is left out.
+local function FindGameTexts(target, ours)
     local list, seen = {}, {}
     local function add(fs, known)
         if type(fs) == "table" and fs.GetObjectType and fs:GetObjectType() == "FontString" and not seen[fs] then
@@ -1411,7 +1456,7 @@ local function FindGameTexts(target)
     add(target.TextString, true)
     if target == MainMenuExpBar then add(MainMenuBarExpText, true) end
     local function visit(f, depth)
-        if f == skin.frame or depth > 3 then return end
+        if f == ours or depth > 3 then return end
         for _, r in ipairs({ f:GetRegions() }) do add(r, false) end
         for _, child in ipairs({ f:GetChildren() }) do visit(child, depth + 1) end
     end
@@ -1426,32 +1471,126 @@ local function LooksLikeXP(fs)
     return type(text) == "string" and text:find("%d%s*/%s*%d") ~= nil
 end
 
-local function MuteGameTexts(on)
-    for _, entry in ipairs(gameTexts) do
+local function MuteGameTexts(state, on)
+    local muted = state.muted
+    for _, entry in ipairs(state.list) do
         local fs = entry.fs
         if on and (entry.known or LooksLikeXP(fs)) then
-            if mutedTexts[fs] == nil then mutedTexts[fs] = fs:GetAlpha() end
+            if muted[fs] == nil then muted[fs] = fs:GetAlpha() end
             if fs:GetAlpha() ~= 0 then fs:SetAlpha(0) end
-        elseif mutedTexts[fs] ~= nil then
-            fs:SetAlpha(mutedTexts[fs])
-            mutedTexts[fs] = nil
+        elseif muted[fs] ~= nil then
+            fs:SetAlpha(muted[fs])
+            muted[fs] = nil
         end
     end
 end
 
+-- Puts a skin view over a game bar's fill: a child of the bar, so it shows, hides, moves and scales
+-- with it (Edit Mode included), above the fill, and its text above the game's art there. Returns
+-- the strata and level the text went above and the topmost frame that art was found under.
+local function AttachView(v, target, fill)
+    local frame = v.frame
+    frame:SetParent(target)
+    frame:SetFrameStrata(fill:GetFrameStrata())
+    frame:SetFrameLevel(fill:GetFrameLevel() + 10)
+    frame:SetScale(1)
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", fill, "TOPLEFT", 0, 0)
+    local strata, level, root = TopOfBarArt(target, frame)
+    v.textFrame:SetFrameStrata(strata)
+    v.textFrame:SetFrameLevel(min(10000, max(level, frame:GetFrameLevel()) + 1))
+    return strata, level, root
+end
+
+-- The game's end caps (the gryphons or wyverns beside the action bars). A status bar placed above
+-- the action bars, as the second one is, has its ends under them. Each is { region, trim }: trim is
+-- how far in from the region's inner edge (the side towards the bars) its art stops, in the
+-- region's units. Forever's caps are Edit Mode frames (they have a Selection) with empty space on
+-- their inner side: their Edit Mode selection stops 34 short of the inner edge, but the gryphon's
+-- beak curls out past it at the height of the bars above the action bars, to about 23 short, as
+-- measured in game. Era and Anniversary's are textures, also under the older names.
+local FOREVER_CAP_TRIM = 20
+
+local function EndCaps()
+    local list = {}
+    local caps = MainActionBar and MainActionBar.EndCaps
+    if type(caps) == "table" then
+        for _, cap in ipairs({ caps.LeftEndCap or false, caps.RightEndCap or false }) do
+            if cap then
+                local frame = cap.GetObjectType and cap:GetObjectType() ~= "Texture"
+                list[#list + 1] = { region = cap, trim = frame and cap.Selection and FOREVER_CAP_TRIM or 0 }
+            end
+        end
+    end
+    for _, cap in ipairs({ MainMenuBarLeftEndCap or false, MainMenuBarRightEndCap or false }) do
+        if cap then list[#list + 1] = { region = cap, trim = 0 } end
+    end
+    return list
+end
+
+local CAP_PAD = 10 -- space between the art and the text
+
+-- How far the game's end caps reach over the left and right ends of region, in its own units.
+local function EndCapInsets(region)
+    local s = region:GetEffectiveScale()
+    local l, r, b, t = region:GetLeft(), region:GetRight(), region:GetBottom(), region:GetTop()
+    if not (l and r and b and t) or Secret(l, r, b, t) then return 0, 0 end
+    l, r, b, t = l * s, r * s, b * s, t * s
+    local mid, insetL, insetR = (l + r) / 2, 0, 0
+    for _, entry in ipairs(EndCaps()) do
+        local cap = entry.region
+        if type(cap) == "table" and cap.IsVisible and cap:IsVisible() then
+            local owner = cap.GetEffectiveScale and cap or cap:GetParent()
+            local cs = owner:GetEffectiveScale()
+            local cl, cr, cb, ct = cap:GetLeft(), cap:GetRight(), cap:GetBottom(), cap:GetTop()
+            if cl and cr and cb and ct and not Secret(cl, cr, cb, ct) then
+                cl, cr, cb, ct = cl * cs, cr * cs, cb * cs, ct * cs
+                local left, trim = (cl + cr) / 2 < mid, entry.trim * cs
+                -- Where the art ends on the side towards the bar.
+                if left then cr = cr - trim else cl = cl + trim end
+                if cr > l and cl < r and ct > b and cb < t then
+                    if left then
+                        insetL = max(insetL, cr - l)
+                    else
+                        insetR = max(insetR, r - cl)
+                    end
+                end
+            end
+        end
+    end
+    -- Never more than a third of the bar each, whatever the caps' frames say.
+    local third = (r - l) / 3
+    insetL, insetR = min(insetL, third), min(insetR, third)
+    return insetL > 0 and floor(insetL / s + CAP_PAD + 0.5) or 0, insetR > 0 and floor(insetR / s + CAP_PAD + 0.5) or 0
+end
+
+-- Moves a skin view's left and right text clear of the end caps over the fill it covers.
+local function FitTextToCaps(v, fill)
+    local l, r = EndCapInsets(fill)
+    if l ~= (v.insetL or 0) or r ~= (v.insetR or 0) then
+        v.insetL, v.insetR = l, r
+        ApplyTextSize(v)
+    end
+end
+
+-- Takes a skin view off its game bar, back to UIParent and hidden.
+local function DetachView(v)
+    v.frame:Hide()
+    v.frame:ClearAllPoints()
+    v.frame:SetParent(UIParent)
+end
+
 local function Unskin()
     if not skinTarget then return end
-    MuteGameTexts(false)
-    gameTexts = {}
+    MuteGameTexts(xpTexts, false)
+    xpTexts.list = {}
     skinTarget, skinFill = nil, nil
-    skin.frame:Hide()
-    skin.frame:ClearAllPoints()
-    skin.frame:SetParent(UIParent)
+    DetachView(skin)
 end
 
 -- Runs on login, when either bar option changes and every second while it is on, so the skin view
 -- follows the game swapping or resizing its XP bar. verbose reports the outcome in chat.
-local function ApplySkin(verbose)
+function ApplySkin(verbose)
     ApplyBlizzardBar()
     if not SkinWanted() then
         Unskin()
@@ -1474,23 +1613,17 @@ local function ApplySkin(verbose)
     local frame = v.frame
     local textStrata, textLevel, root
     if target ~= skinTarget or fill ~= skinFill then
-        MuteGameTexts(false)
-        gameTexts = FindGameTexts(target)
+        MuteGameTexts(xpTexts, false)
+        xpTexts.list = FindGameTexts(target, frame)
         skinTarget, skinFill = target, fill
-        frame:SetParent(target)
-        frame:SetFrameStrata(fill:GetFrameStrata())
-        frame:SetFrameLevel(fill:GetFrameLevel() + 10)
-        frame:SetScale(1)
-        frame:ClearAllPoints()
-        frame:SetPoint("TOPLEFT", fill, "TOPLEFT", 0, 0)
-        textStrata, textLevel, root = TopOfBarArt(target, frame)
-        v.textFrame:SetFrameStrata(textStrata)
-        v.textFrame:SetFrameLevel(min(10000, max(textLevel, frame:GetFrameLevel()) + 1))
+        textStrata, textLevel, root = AttachView(v, target, fill)
         ShowViews()
     end
     if w ~= v.width or h ~= v.height then frame:SetSize(w, h) end
+    -- Every second too: Edit Mode can move the bar under the end caps or out from under them.
+    FitTextToCaps(v, fill)
     -- Every second too, in case the game shows its text again some other way.
-    MuteGameTexts(SkinHidesGameText())
+    MuteGameTexts(xpTexts, SkinHidesGameText())
     if root then
         RenderBar()
         UpdateSessionTexts()
@@ -1542,7 +1675,11 @@ end)
 bar:SetScript("OnEnter", function(self)
     hovered = true
     fader:Show()
-    if db.locked then return end
+    if db.locked then
+        -- Lent to another bar (reputation): its tooltip.
+        if lentTo and lentTo.Tooltip then lentTo.Tooltip(self) end
+        return
+    end
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
     GameTooltip:AddLine("Smooth Experience Bar")
     GameTooltip:AddLine("Drag to move", 1, 1, 1)
@@ -1588,7 +1725,7 @@ end
 
 local function ApplySkinTexts()
     RenderSkinTexts()
-    if skinTarget then MuteGameTexts(SkinHidesGameText()) end
+    if skinTarget then MuteGameTexts(xpTexts, SkinHidesGameText()) end
 end
 
 -- The choices for the default bar's Left, Centre and Right: { key, name } in menu order.
@@ -1672,9 +1809,34 @@ function Core.ResetPosition()
     ApplyPosition()
 end
 
+-- Other bars' hooks (Reputation.lua). Validators take a profile and return the values to correct in it (each
+-- setting of theirs it has that is not one they know, set back to its default): at load and when copying one.
+-- onLoaded and onWorld run after this file's own ADDON_LOADED and PLAYER_ENTERING_WORLD handling, so they never
+-- depend on which frame the client hands the event to first.
+local validators, onLoaded, onWorld = {}, {}, {}
+
+local function Validated(profile)
+    local out = {}
+    for _, fn in ipairs(validators) do
+        for k, v in pairs(fn(profile)) do out[k] = v end
+    end
+    return out
+end
+
 -- Profiles: every character's settings, keyed "Name - Realm", or "First Last - Ruleset" on Forever.
 -- oldKeys holds Forever's keys from before surnames, which are kept but not listed.
 local profiles, profileKey, oldKeys
+-- The whole account's saved table (SmoothExperienceBarDB), and whether the account had the addon before this
+-- login: for what is noted once per account, such as the What's New window (WhatsNew.lua).
+local account, accountKnown
+
+function Core.Account()
+    return account
+end
+
+function Core.AccountKnown()
+    return accountKnown
+end
 
 -- Forever has no realms: names are unique across the region, and a character plays under a
 -- ruleset. GetRealmName there gives a server name, so the ruleset names the character instead.
@@ -1725,6 +1887,7 @@ function Core.CopyProfile(key)
     ApplyPosition()
     local values = setmetatable({}, { __index = src })
     for setting in pairs(SKIN_TEXTS) do values[setting] = ValidSlot(src, setting) end
+    for k, v in pairs(Validated(src)) do values[k] = v end
     ns.Options.SetAll(values)
     DEFAULT_CHAT_FRAME:AddMessage("|cffa070ffSmoothXP|r Copied settings from " .. key .. ".")
 end
@@ -1923,6 +2086,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         local oldKey
         profileKey, oldKey = CharacterKeys()
         local newToAddon = not next(profiles) and not root.legacy
+        account, accountKnown = root, not newToAddon
         -- Forever: profiles were keyed by first name and server before surnames. Note those keys once,
         -- to leave them off the copy list, and start each character from its old profile. They are
         -- kept, as two characters with the same first name shared one.
@@ -1963,6 +2127,8 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         if not ns.Themes.list[db.theme] then db.theme = DEFAULTS.theme end
         if db.bars ~= "default" and db.bars ~= "both" then db.bars = "separate" end
         for setting in pairs(SKIN_TEXTS) do db[setting] = ValidSlot(db, setting) end
+        for k, v in pairs(Validated(db)) do db[k] = v end
+        for _, fn in ipairs(onLoaded) do fn(db) end
         main.liquid:SetOptions(db)
         ApplyTheme()
         ApplyRounding(main)
@@ -1999,6 +2165,7 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         QueueQuestScan()
         Refresh()
         UpdateSessionTexts()
+        for _, fn in ipairs(onWorld) do fn(isLogin, isReload) end
 
     elseif event == "TIME_PLAYED_MSG" then
         played.total, played.level, played.at = arg1 or 0, arg2 or 0, time()
@@ -2081,6 +2248,7 @@ local HELP = {
     "/seb test off - back to live data",
     "/seb skin - show the liquid in the game's own experience bar too, or the separate bar only again",
     "/seb setup - open the setup wizard",
+    "/seb changes - what's new in this version and the ones before",
 }
 
 SLASH_SMOOTHEXPERIENCEBAR1 = "/seb"
@@ -2106,6 +2274,8 @@ SlashCmdList.SMOOTHEXPERIENCEBAR = function(input)
         if arg == "off" then Print("Test mode off.") end
     elseif cmd == "setup" then
         if ns.Wizard then ns.Wizard.Open() end
+    elseif cmd == "changes" then
+        if ns.WhatsNew then ns.WhatsNew.Open() end
     elseif cmd == "skin" then
         Core.SetSetting("bars", SkinWanted() and "separate" or "both")
         if not SkinWanted() then Print("Back to a separate bar.") end
@@ -2113,3 +2283,86 @@ SlashCmdList.SMOOTHEXPERIENCEBAR = function(input)
         for _, line in ipairs(HELP) do Print(line) end
     end
 end
+
+--------------------------------------------------------------------------------
+-- For the other bars (Reputation.lua): the view, animation and skin pieces they share with this one.
+-- They add their defaults to DEFAULTS and their setting handlers to settingApply as they load,
+-- before the saved settings do.
+--------------------------------------------------------------------------------
+
+-- Hands the separate bar to another bar (owner: { Shown, Fill }) or takes it back (nil). While lent it
+-- is out of views, so nothing here draws XP on it; its owner draws on it instead. The lines around
+-- it and the completed quest and rested segments are XP's, so they go while it is lent.
+local function SetSeparateOwner(owner)
+    if owner == lentTo then return end
+    lentTo = owner
+    for i, v in ipairs(views) do
+        if v == main then
+            table.remove(views, i)
+            break
+        end
+    end
+    main.fillOf = owner and owner.Fill or nil
+    if owner then
+        for _, t in ipairs(main.texts) do
+            if t.spec.around then t.fs:Hide() end
+        end
+        main.questTex:Hide()
+        main.restedTex:Hide()
+        main.leadTex:Hide()
+        main.liquid:SetContact(nil)
+        main.liquid:SetRested(false)
+    else
+        table.insert(views, 1, main)
+        main.sizeKeys = nil
+        for _, t in ipairs(main.texts) do
+            if t.spec.around then t.fs:Hide() end
+        end
+        ApplyTextSize(main)
+        ApplySegments(main)
+        ApplyTheme()
+        main.liquid:SetRested(T.rested > 0)
+        main.liquid:Snap(A.fill * main.width)
+        UpdateSessionTexts()
+        RenderBar()
+        RenderText(true)
+    end
+    ShowViews()
+end
+
+ns.Bar = {
+    DB = function() return db end,
+    CharDB = function() return cdb end,
+    FormatTime = FormatTime,
+    main = main,
+    Maxed = function() return maxed end,
+    AddValidator = function(fn) validators[#validators + 1] = fn end,
+    OnLoaded = function(fn) onLoaded[#onLoaded + 1] = fn end,
+    OnWorld = function(fn) onWorld[#onWorld + 1] = fn end,
+    ApplyBlizzardBar = ApplyBlizzardBar,
+    SetSeparateOwner = SetSeparateOwner,
+    ShowViews = ShowViews,
+    WakeBar = WakeBar,
+    defaults = DEFAULTS,
+    settingApply = SETTING_APPLY,
+    help = HELP,
+    anim = ANIM,
+    NewView = NewView,
+    ApplyRounding = ApplyRounding,
+    ApplyTextSize = ApplyTextSize,
+    ResolveTheme = ResolveTheme,
+    Place = Place,
+    Spring = Spring,
+    Secret = Secret,
+    FormatNumber = FormatNumber,
+    Round1 = Round1,
+    Print = Print,
+    GameBar = GameBar,
+    AttachView = AttachView,
+    DetachView = DetachView,
+    FitTextToCaps = FitTextToCaps,
+    FindGameTexts = FindGameTexts,
+    MuteGameTexts = MuteGameTexts,
+    TooltipRow = TooltipRow,
+    OpenSettingsOnRightClick = OpenSettingsOnRightClick,
+}

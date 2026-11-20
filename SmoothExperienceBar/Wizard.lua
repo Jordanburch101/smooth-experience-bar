@@ -43,6 +43,11 @@ local TEXTS = {
     { key = "all", label = "All the numbers", desc = "Times, leveling estimate, XP/hour, completed and rested XP" },
     { key = "none", label = "Just the bar", desc = "Level, XP and percentage inside the bar only" },
 }
+local REPS = {
+    { key = "standing", label = "Standing colours", desc = "The liquid in the game's colour for your standing" },
+    { key = "theme", label = "Match your theme", desc = "The liquid in the theme you picked" },
+    { key = "off", label = "Leave it as it is", desc = "The game's own reputation bar" },
+}
 
 -- XP gains the previews play while the wizard is open, as /seb test does.
 local DEMO = { "gain", "gain", "turnin", "gain", "gain", "level" }
@@ -80,7 +85,12 @@ local function CurrentChoices()
     for _, k in ipairs(TEXT_KEYS) do
         if get(k) then text = "all" end
     end
-    return { place = place, theme = get("theme"), effects = effects, text = text }
+    -- A reputation theme of its own (neither the standing colours nor the experience theme) starts on Match
+    -- Your Theme, the closest card, and is kept unless another card is picked (repKeep).
+    local repTheme = get("repTheme")
+    local rep = not get("repBar") and "off" or repTheme == ns.Themes.standing and "standing" or "theme"
+    local repKeep = rep == "theme" and repTheme ~= get("theme") and repTheme or nil
+    return { place = place, theme = get("theme"), effects = effects, text = text, rep = rep, repKeep = repKeep }
 end
 
 --------------------------------------------------------------------------------
@@ -184,6 +194,8 @@ local Refresh, ShowPage
 
 local function Pick(field, key)
     return function()
+        -- Another reputation card or theme: a reputation theme of its own is no longer kept.
+        if (field == "rep" or field == "theme") and key ~= choice[field] then choice.repKeep = nil end
         choice[field] = key
         Refresh()
     end
@@ -313,6 +325,48 @@ function BUILD.text(p)
     end
 end
 
+-- The game's reputation bar as it is without ours: a flat fill, its text in the middle.
+local REP_BAR_W, REP_BAR_H = 736, 16
+
+local function GameRepBar(parent)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(REP_BAR_W, REP_BAR_H)
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.6)
+    local fill = f:CreateTexture(nil, "ARTWORK")
+    fill:SetPoint("TOPLEFT")
+    fill:SetPoint("BOTTOMLEFT")
+    fill:SetWidth(REP_BAR_W * 0.35)
+    fill:SetColorTexture(0, 0.6, 0.1, 1)
+    local text = Font(f, "GameFontHighlightSmall", "Stormwind 1,050 / 3,000", "CENTER")
+    text:SetPoint("CENTER")
+    return f
+end
+
+function BUILD.rep(p)
+    Heading(p, "And your reputation bar?", "It shows while you watch a faction: tick Show as Experience Bar "
+        .. "for one in the Reputation panel.")
+    ui.cards.rep = Cards(p, REPS, "rep", 760, 76, 0, -46, 0)
+    p.previews = {}
+    for i, item in ipairs(REPS) do
+        local c = ui.cards.rep[item.key]
+        c:ClearAllPoints()
+        c:SetPoint("TOPLEFT", 0, -46 - (i - 1) * 86)
+        c.desc:ClearAllPoints()
+        c.desc:SetPoint("LEFT", c.title, "RIGHT", 10, 0)
+        c.desc:SetWidth(0)
+        local bar
+        if item.key == "off" then
+            bar = GameRepBar(c)
+        else
+            p.previews[item.key] = ns.Core.NewRepPreview(c, REP_BAR_W, REP_BAR_H)
+            bar = p.previews[item.key].frame
+        end
+        bar:SetPoint("TOPLEFT", 12, -42)
+    end
+end
+
 function BUILD.done(p)
     local title = Font(p, "GameFontNormalHuge", "All set", "CENTER")
     title:SetPoint("TOP", 0, -4)
@@ -328,7 +382,7 @@ end
 
 -- The text page is about the separate bar, so it drops out when only the game's bar is used.
 local function Flow()
-    local flow = { "welcome", "place", "theme", "effects" }
+    local flow = { "welcome", "place", "theme", "effects", "rep" }
     if choice.place ~= "default" then flow[#flow + 1] = "text" end
     flow[#flow + 1] = "done"
     return flow
@@ -379,6 +433,10 @@ function Refresh()
             ns.Core.StylePreview(ui.cards.text[item.key].preview, choice.theme, opts, item.key)
         end
     end
+    if pages.rep then
+        ns.Core.StyleRepPreview(pages.rep.previews.standing, ns.Themes.standing, opts)
+        ns.Core.StyleRepPreview(pages.rep.previews.theme, choice.repKeep or choice.theme, opts)
+    end
     for field, cards in pairs(ui.cards) do
         for key, c in pairs(cards) do c:SetSelected(choice[field] == key) end
     end
@@ -386,6 +444,7 @@ function Refresh()
         local lines = { "Bar: " .. Label(PLACES, choice.place), "Theme: " .. ns.Themes.list[choice.theme].name,
                         "Effects: " .. Label(EFFECTS, choice.effects) }
         if choice.place ~= "default" then lines[#lines + 1] = "Text: " .. Label(TEXTS, choice.text) end
+        lines[#lines + 1] = "Reputation: " .. Label(REPS, choice.rep)
         pages.done.summary:SetText(table.concat(lines, "    "))
     end
 
@@ -430,6 +489,12 @@ local function Apply()
     if choice.place ~= "default" then
         for _, key in ipairs(TEXT_KEYS) do set(key, choice.text == "all") end
     end
+    if choice.rep == "standing" then
+        set("repTheme", ns.Themes.standing)
+    elseif choice.rep == "theme" then
+        set("repTheme", choice.repKeep or choice.theme)
+    end
+    set("repBar", choice.rep ~= "off")
 end
 
 -- The game's own window: metal border, dark background, gold title, without the portrait, the

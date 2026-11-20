@@ -55,8 +55,13 @@ function Region:SetSize(w, h)
 end
 function Region:GetWidth() return self.w end
 function Region:GetHeight() return self.h end
-function Region:GetLeft() return 660 end
-function Region:GetTop() return 1040 end
+-- Screen position: the mock does no layout, so a region sits at (660, 1040) unless a test places it
+-- with screenLeft / screenTop (in its own units, as the client returns them), at effectiveScale.
+function Region:GetLeft() return self.screenLeft or 660 end
+function Region:GetTop() return self.screenTop or 1040 end
+function Region:GetRight() return self:GetLeft() + (self.w or 0) end
+function Region:GetBottom() return self:GetTop() - (self.h or 0) end
+function Region:GetEffectiveScale() return self.effectiveScale or 1 end
 function Region:SetResizable() end
 function Region:SetResizeBounds(...) self.bounds = { ... } end
 function Region:StartSizing(point) self.sizing = point end
@@ -153,6 +158,12 @@ function Region:SetFormattedText(fmt, ...) self.text = string.format(fmt, ...) e
 function Region:GetStringWidth()
     local plain = (self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     return #plain * (self.fontSize or 12) * 0.55
+end
+-- Wrapped over its width, if it has one, a line per width's worth of text.
+function Region:GetStringHeight()
+    local lines = 1
+    if self.w and self.w > 0 then lines = math.max(1, math.ceil(self:GetStringWidth() / self.w)) end
+    return lines * (self.fontSize or 12)
 end
 function Region:CreateTexture(_, layer, _, sub) return NewRegion("Texture", self, layer, sub) end
 function Region:CreateMaskTexture(_, layer, _, sub) return NewRegion("MaskTexture", self, layer, sub) end
@@ -642,6 +653,36 @@ function __settingsRows()
     return out
 end
 
+-- The addon's toc fields: the version is the toc's own @project-version@ until a build fills it in.
+__addonVersion = "@project-version@"
+C_AddOns = {
+    GetAddOnMetadata = function(name, field)
+        assert(type(name) == "string" and type(field) == "string", "Usage: GetAddOnMetadata(addon, field)")
+        if name == "SmoothExperienceBar" and field == "Version" then return __addonVersion end
+    end,
+}
+
+-- Reputation, as Era, Anniversary and Forever all have it: the watched faction is __watchedFaction, in
+-- GetWatchedFactionData's shape ({ name, reaction, currentReactionThreshold, nextReactionThreshold,
+-- currentStanding, factionID }), or nil with none watched.
+C_Reputation = {}
+function C_Reputation.GetWatchedFactionData() return __watchedFaction end
+local function FactionColor(r, g, b) return { r = r, g = g, b = b } end
+FACTION_BAR_COLORS = {
+    FactionColor(0.8, 0.3, 0.22), FactionColor(0.8, 0.3, 0.22), FactionColor(0.75, 0.27, 0),
+    FactionColor(0.9, 0.7, 0), FactionColor(0, 0.6, 0.1), FactionColor(0, 0.6, 0.1),
+    FactionColor(0, 0.6, 0.1), FactionColor(0, 0.6, 0.1),
+}
+for i, label in ipairs({ "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }) do
+    _G["FACTION_STANDING_LABEL" .. i] = label
+end
+function UnitSex() return 2 end
+-- The gendered string where the client has one (token_FEMALE for gender 3), else the token's own.
+function GetText(token, gender)
+    assert(type(token) == "string", "GetText needs a token")
+    return (gender == 3 and _G[token .. "_FEMALE"]) or _G[token]
+end
+
 __markCFunctions()
 
 function __fire(event, ...)
@@ -675,8 +716,13 @@ function __loadAddon(dir, name)
     local ns = {}
     for line in io.lines(dir .. "/" .. name .. ".toc") do
         line = line:gsub("%s+$", "")
-        if line ~= "" and not line:find("^#") then
-            __load(dir .. "/" .. line:gsub("\\", "/"), name, ns)
+        -- WhatsNewData.lua is written by the build (tools/whatsnew_data.py) and absent from the source; the client
+        -- skips a toc file it cannot find, so the mock does for that one.
+        local path = dir .. "/" .. line:gsub("\\", "/")
+        local f = io.open(path, "rb")
+        if f then f:close() end
+        if line ~= "" and not line:find("^#") and (f or line ~= "WhatsNewData.lua") then
+            __load(path, name, ns)
         end
     end
     return ns

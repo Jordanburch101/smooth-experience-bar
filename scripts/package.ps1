@@ -5,7 +5,8 @@
 #
 # Steps:
 #   1. Copies SmoothExperienceBar/ to build/SmoothExperienceBar/.
-#   2. Puts the version in place of @project-version@ in the toc.
+#   2. Puts the version in place of @project-version@ in the toc, and writes WhatsNewData.lua, the in-game
+#      changelog's notes, from CHANGELOG.md (tools/whatsnew_data.py; a release version needs a section).
 #   3. Checks the build: every file the toc lists exists, no markers are left,
 #      and, with LuaJIT installed, every Lua file compiles.
 #   4. Zips build/SmoothExperienceBar/ to dist/SmoothExperienceBar-<version>.zip,
@@ -53,6 +54,18 @@ Copy-Item -Path (Join-Path $source "*") -Destination $build -Recurse
 $tocPath = Join-Path $build "$addonName.toc"
 $toc = Get-Content $tocPath | ForEach-Object { $_.Replace("@project-version@", $Version) }
 [System.IO.File]::WriteAllText($tocPath, (($toc -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
+
+# The in-game changelog's notes (WhatsNew.lua), from CHANGELOG.md; a release version must have a section.
+# The first Python that runs: on Windows python3 can be the Microsoft Store's stand-in, which only says Python is not
+# installed.
+$python = @((Join-Path $root "tools/venv/Scripts/python.exe"), "python3", "python") |
+    Where-Object { (Test-Path $_) -or (Get-Command $_ -ErrorAction SilentlyContinue) } |
+    Where-Object { $ErrorActionPreference = "Continue"; & $_ -c "import sys" 2>$null; $LASTEXITCODE -eq 0 } |
+    Select-Object -First 1
+$ErrorActionPreference = "Stop"
+if (-not $python) { Fail "Python is needed to write WhatsNewData.lua" }
+& $python (Join-Path $root "tools/whatsnew_data.py") (Join-Path $root "CHANGELOG.md") (Join-Path $build "WhatsNewData.lua") $Version
+if ($LASTEXITCODE -ne 0) { Fail "could not write WhatsNewData.lua from CHANGELOG.md" }
 
 # 3. Check the build.
 $listed = @($toc | Where-Object { $_ -and -not $_.StartsWith("#") } | ForEach-Object { $_.Trim() })

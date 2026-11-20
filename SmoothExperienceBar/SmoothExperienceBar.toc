@@ -10,5 +10,8 @@
 Themes.lua
 Liquid.lua
 SmoothExperienceBar.lua
+Reputation.lua
 Options.lua
 Wizard.lua
+WhatsNewData.lua
+WhatsNew.lua

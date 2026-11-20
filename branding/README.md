@@ -11,13 +11,22 @@ https://www.wowhead.com/icon=6841475/inv-cosmicdragonmount).
   (or the upscales) for CurseForge and other listings.
 - `smooth-experience-bar-64.png`, `-128.png`, `-256.png` - upscaled from the 56px crop
 
+## Store page
+
+`curseforge.md` is the CurseForge project description, to paste into its Markdown editor (Edit Project >
+Description). Keep it in step with the top-level README and the features. Its images load from `main`, so push
+first and let the Gallery workflow commit any new images before pasting.
+
 ## Gallery
 
-`gallery/` holds listing screenshots (1600x900), `hero.gif` and `default-bar.gif`, rendered from the real
-addon code by `tools/harness/gallery.py`. The screenshots and `hero.gif` are drawn over
+`gallery/` holds listing screenshots (1600x900), `hero.gif`, `default-bar.gif` and `reputation.gif`, rendered from
+the real addon code by `tools/harness/gallery.py`. `hero.png` and `hero.gif` show the bar with Glass on. The screenshots and `hero.gif` are drawn over
 `gallery-backdrop.jpg` (a crop of an in-game screenshot). `default-bar.gif` shows the liquid in the
 default experience bar over `default-bar-backdrop.png`, an in-game screenshot of WoW Forever's action bars:
 the script empties the experience bar in it and draws the liquid there, with the game's segment lines over it and the text on top.
+`reputation.gif` shows the liquid in the game's reputation bar over the same screenshot, in the same place (the
+reputation bar takes the experience bar's place while a faction is watched). `reputation.png` shows the separate bar
+tracking reputation and a bar in each standing's colour.
 Its position in the screenshot is `DEFAULT_BAR` in the script; measure it again if the screenshot changes.
 
 `action-bars.png` is an in-game screenshot of WoW Forever's action bars, gryphons and all. `tools/make_media.py`

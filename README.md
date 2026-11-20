@@ -23,6 +23,13 @@ Works on **WoW Classic Era**, **TBC Anniversary** and **WoW Forever**.
 - **Rested XP:** its own segment and a percentage.
 - **Session stats:** time this level, time this session, XP per hour and an estimated time to level.
 - **Max level:** hide the bar, or keep it as a full bar showing total time played.
+- **Reputation:** the liquid inside the game's reputation bar for the faction you watch, in the game's
+  colour for your standing or any theme, with its own text and tooltip. The separate bar can track it
+  too, always or once you reach max level.
+
+![The liquid filling the game's own reputation bar, pouring through Neutral in yellow and on into Friendly's green](branding/gallery/reputation.gif)
+
+![The separate bar tracking reputation, with this session's gains, reputation per hour and the time to the next standing around it, over a bar in each standing's colour from Hated to Exalted](branding/gallery/reputation.png)
 
 ## Lightweight
 
@@ -69,8 +76,10 @@ The default theme matches the original WeakAura. 24 more are optional:
 | `/seb reset` | Reset position and size |
 | `/seb session` | Reset session time and XP/hour |
 | `/seb test` | Preview an XP gain (also `level`, `multi`, `quest`, `turnin`, `rested`, `off`) |
+| `/seb test rep` | Preview a reputation gain (`/seb test standing` for a new standing) |
 | `/seb skin` | Show the liquid in the game's own experience bar, or stop |
 | `/seb setup` | Open the setup wizard |
+| `/seb changes` | What's new in this version and the ones before |
 
 ## Credits
 
@@ -83,7 +92,7 @@ Luxthos & Daemoos. Smooth Experience Bar is not affiliated with or endorsed by B
 
 | Folder | What it is |
 |---|---|
-| `SmoothExperienceBar/` | The addon. `Themes.lua` holds the themes, `Liquid.lua` the liquid, `Options.lua` the settings page |
+| `SmoothExperienceBar/` | The addon. `Themes.lua` holds the themes, `Liquid.lua` the liquid, `Reputation.lua` the reputation bar, `Options.lua` the settings page |
 | `tools/make_media.py` | Generates the textures in `SmoothExperienceBar/Media/` |
 | `tools/harness/` | A WoW API mock that runs the addon outside the game: tests, previews and the gallery |
 | `branding/` | Icon, gallery screenshots and the backdrop they are drawn on; see its README |
@@ -100,6 +109,16 @@ tools/venv/Scripts/python tools/harness/slash_test.py SmoothExperienceBar       
 tools/venv/Scripts/python tools/harness/run.py SmoothExperienceBar preview theme=fel       # preview.gif + sheet.png
 tools/venv/Scripts/python tools/harness/probe.py SmoothExperienceBar cosmic                # live particle counts
 tools/venv/Scripts/python tools/harness/gallery.py SmoothExperienceBar branding/gallery branding/gallery-backdrop.jpg
+```
+
+### The in-game changelog
+
+`WhatsNew.lua` shows each release's `CHANGELOG.md` section in a window once after an update. Its notes are
+`WhatsNewData.lua`, which `scripts/package.ps1` writes for every build and git ignores. To try the window in the
+dev install, write it by hand, then restart the game once (it is a toc file) and use `/seb changes`:
+
+```powershell
+tools/venv/Scripts/python tools/whatsnew_data.py    # SmoothExperienceBar/WhatsNewData.lua from CHANGELOG.md
 ```
 
 ### Adding a theme

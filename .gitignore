@@ -4,3 +4,4 @@ __pycache__/
 build/
 dist/
 *.zip
+SmoothExperienceBar/WhatsNewData.lua

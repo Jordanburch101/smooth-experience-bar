@@ -722,3 +722,40 @@ Themes.Register("void", {
           grow = true, alpha = 0.59, from = { 0.45, 0.25, 0.75 }, to = { 0.12, 0.04, 0.25 } },
     },
 })
+
+--------------------------------------------------------------------------------
+-- Reputation standing colours
+--------------------------------------------------------------------------------
+
+-- The reputation bar's Standing Colours: the game's own reputation bar colour for each standing
+-- (red for Hated and Hostile, orange Unfriendly, yellow Neutral, green Friendly and up), built into a
+-- full theme. It is not in Themes.order, as it means nothing for experience.
+Themes.standing = "standing"
+Themes.standingName = "Standing Colours"
+
+local STANDING_FALLBACK = {
+    { 0.80, 0.30, 0.22 }, { 0.80, 0.30, 0.22 }, { 0.75, 0.27, 0.00 }, { 0.90, 0.70, 0.00 },
+    { 0.00, 0.60, 0.10 }, { 0.00, 0.60, 0.10 }, { 0.00, 0.60, 0.10 }, { 0.00, 0.60, 0.10 },
+}
+local standingThemes = {}
+
+local function Reaction(reaction)
+    return math.min(8, math.max(1, floor(tonumber(reaction) or 4)))
+end
+
+-- The game's colour for a standing, reaction 1 (Hated) to 8 (Exalted): { r, g, b }.
+function Themes.StandingColor(reaction)
+    reaction = Reaction(reaction)
+    local gc = FACTION_BAR_COLORS and FACTION_BAR_COLORS[reaction]
+    return gc and gc.r and { gc.r, gc.g, gc.b } or STANDING_FALLBACK[reaction]
+end
+
+function Themes.Standing(reaction)
+    reaction = Reaction(reaction)
+    if not standingThemes[reaction] then
+        local t = FromColor(Themes.StandingColor(reaction), Themes.list[Themes.default])
+        t.key, t.name = Themes.standing, Themes.standingName
+        standingThemes[reaction] = t
+    end
+    return standingThemes[reaction]
+end

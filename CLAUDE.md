@@ -20,12 +20,20 @@ The README covers the layout and tools; this file holds the rules.
 - **Commits:** stage the files you changed by name, never `git add -A`; the folder can hold files that are
   not part of the repo. Commit messages are plain and professional.
 - **Changelog:** add player-facing notes to `CHANGELOG.md` under the next version as features land
-  (`### New`, `### Fixed`, no internal changes).
+  (`### New`, `### Fixed`, no internal changes). The same notes are the in-game What's New window
+  (`WhatsNew.lua`, as Smooth Animated Bars'): every player sees them once after updating, so each note must read
+  well on its own. Start a note with a bold title (`- **Reputation Bar**: ...`) to show the title on a line of its
+  own there.
+- **Store page:** `branding/curseforge.md` is the CurseForge description. Update it (and the README) as features
+  land, in the same plain style; its images are the gallery's, linked from `main`.
 
 ## Release
 
 1. Add the version's section to `CHANGELOG.md`: `## X.Y.Z` with `### New` and `### Fixed`, written for
-   players. `bash scripts/changelog.sh X.Y.Z` prints what the release will use.
+   players. `bash scripts/changelog.sh X.Y.Z` prints what the release will use. `scripts/package.ps1` writes
+   `WhatsNewData.lua` (the in-game notes, not committed) from it with `tools/whatsnew_data.py`, prints
+   "WhatsNewData.lua: N versions, newest X.Y.Z" (the newest must be this version), and fails if the version has no
+   section.
 2. Run the tests, commit and push `main`.
 3. Push an annotated tag: `git tag -a vX.Y.Z -m "Smooth Experience Bar X.Y.Z"`, then `git push origin vX.Y.Z`.
    The version comes from the tag (the toc says `@project-version@`); tags containing `beta` or `alpha`
@@ -33,5 +41,7 @@ The README covers the layout and tools; this file holds the rules.
 4. The Release workflow fails at once if the changelog section is missing, then tests, builds, makes the
    GitHub release with the zip and notes, and uploads to CurseForge (project 1768424). Watch it to the end
    (`gh run watch <id> --exit-status`): the GitHub release can succeed while the upload fails.
-5. If only the CurseForge upload failed, fix the cause on `main`, then run
+5. If the store page changed, paste `branding/curseforge.md` into the CurseForge description once the Gallery
+   workflow has committed any new images it shows.
+6. If only the CurseForge upload failed, fix the cause on `main`, then run
    `gh workflow run curseforge-check.yml -f tag=vX.Y.Z` to upload that release again.
