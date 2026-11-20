@@ -1,4 +1,4 @@
-<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-experience-bar/refs/heads/main/branding/gallery/hero.gif" alt="Smooth Experience Bar: an experience bar whose fill flows like liquid as XP is gained, a quest is turned in and the character levels up"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-experience-bar/refs/heads/main/branding/gallery/hero.webp" alt="Smooth Experience Bar: an experience bar whose fill flows like liquid as XP is gained, a quest is turned in and the character levels up"></p>
 
 <p align="center">
   <a href="https://www.curseforge.com/wow/addons/smooth-experience-bar">Get the addon</a> ·
@@ -27,7 +27,7 @@ Works on **WoW Classic Era**, **TBC Anniversary** and **WoW Forever**.
   colour for your standing or any theme, with its own text and tooltip. The separate bar can track it
   too, always or once you reach max level.
 
-![The liquid filling the game's own reputation bar, pouring through Neutral in yellow and on into Friendly's green](branding/gallery/reputation.gif)
+![The liquid filling the game's own reputation bar, pouring through Neutral in yellow and on into Friendly's green](branding/gallery/reputation.webp)
 
 ![The separate bar tracking reputation, with this session's gains, reputation per hour and the time to the next standing around it, over a bar in each standing's colour from Hated to Exalted](branding/gallery/reputation.png)
 
@@ -54,7 +54,7 @@ Open the settings with `/seb`, by right-clicking the bar, or from Options > AddO
 - Settings are saved per character; copy another character's from the Profile section.
 - Preview XP gains, quest turn-ins and level-ups without touching your real XP.
 
-![The liquid filling the game's own experience bar between the action bars, through kills, a quest turn-in and a level-up](branding/gallery/default-bar.gif)
+![The liquid filling the game's own experience bar between the action bars, through kills, a quest turn-in and a level-up](branding/gallery/default-bar.webp)
 
 ![Fire, Frost, Honey, Lava, Cosmic, Nature and Void effect themes, each with its own particles](branding/gallery/effects.png)
 

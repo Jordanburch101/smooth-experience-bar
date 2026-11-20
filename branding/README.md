@@ -19,12 +19,13 @@ first and let the Gallery workflow commit any new images before pasting.
 
 ## Gallery
 
-`gallery/` holds listing screenshots (1600x900), `hero.gif`, `default-bar.gif` and `reputation.gif`, rendered from
-the real addon code by `tools/harness/gallery.py`. `hero.png` and `hero.gif` show the bar with Glass on. The screenshots and `hero.gif` are drawn over
-`gallery-backdrop.jpg` (a crop of an in-game screenshot). `default-bar.gif` shows the liquid in the
+`gallery/` holds listing screenshots (1600x900), `hero.webp`, `default-bar.webp` and `reputation.webp`, rendered from
+the real addon code by `tools/harness/gallery.py`. The animations are full-colour animated WebPs at 30 fps,
+as Smooth Animated Bars' are. Every image shows the bars with Glass on. The screenshots and `hero.webp` are drawn over
+`gallery-backdrop.jpg` (a crop of an in-game screenshot). `default-bar.webp` shows the liquid in the
 default experience bar over `default-bar-backdrop.png`, an in-game screenshot of WoW Forever's action bars:
 the script empties the experience bar in it and draws the liquid there, with the game's segment lines over it and the text on top.
-`reputation.gif` shows the liquid in the game's reputation bar over the same screenshot, in the same place (the
+`reputation.webp` shows the liquid in the game's reputation bar over the same screenshot, in the same place (the
 reputation bar takes the experience bar's place while a faction is watched). `reputation.png` shows the separate bar
 tracking reputation and a bar in each standing's colour.
 Its position in the screenshot is `DEFAULT_BAR` in the script; measure it again if the screenshot changes.

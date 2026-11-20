@@ -1,8 +1,8 @@
 """Render listing screenshots (CurseForge gallery) of the bar over an in-game backdrop.
 
 Usage: python gallery.py <addon dir> <out dir> <backdrop image>
-Writes hero.png, turn-in.png, level-up.png, themes.png, effects.png, reputation.png (1600x900), hero.gif, and
-default-bar.gif and reputation.gif over default-bar-backdrop.png from the backdrop's folder.
+Writes hero.png, turn-in.png, level-up.png, themes.png, effects.png, reputation.png (1600x900), and animated WebPs:
+hero.webp, and default-bar.webp and reputation.webp over default-bar-backdrop.png from the backdrop's folder.
 """
 import os
 import sys
@@ -18,7 +18,7 @@ W, H = 1600, 900
 GOLD = (255, 209, 0)
 # The bar's own side texts get in the way when several bars are stacked.
 NO_SIDE_TEXT = {"showLevelTime": False, "showSessionTime": False, "showXPHour": False, "showQuestRested": False}
-# The main images (hero.png, hero.gif) show the bar with Glass on.
+# Every image shows the bars with Glass on.
 GLASS = {"glass": True}
 
 # A believable session instead of the few seconds the scenario really lasts: 2h 13m at this level,
@@ -101,7 +101,7 @@ def watch(name, reaction, low, high, into):
 
 
 def session(settings=None, before="", after="", scenario=SCENARIO):
-    return Session(ADDON, settings, scenario=scenario, before_login=SEED_BEFORE + "\n" + before,
+    return Session(ADDON, dict(GLASS, **(settings or {})), scenario=scenario, before_login=SEED_BEFORE + "\n" + before,
                    after_login=SEED_AFTER + "\n" + after)
 
 
@@ -133,8 +133,22 @@ def save(img, name):
     print("wrote", path, img.size)
 
 
-def default_bar_gif(name, start=0.8, end=9.6, fps=20, fake=FAKE_XP_BAR, frame="SmoothExperienceBarDefaultFrame",
-                    settings=None, scenario=SCENARIO):
+# The animations' frame rate: a whole number of the harness's steps (render.FPS, 60 a second), or each frame
+# would run longer than it plays and the animation would play fast.
+FPS = 30
+
+
+def save_webp(frames, name, fps=FPS):
+    """An animated WebP, as Smooth Animated Bars' gallery: full colour, so the liquid has none of the banding of a
+    GIF's 256 colours."""
+    path = os.path.join(OUT, name)
+    frames[0].save(path, save_all=True, append_images=frames[1:], duration=round(1000 / fps), loop=0,
+                   quality=92, method=6)
+    print("wrote", path, f"{len(frames)} frames, {os.path.getsize(path) // 1024} KB")
+
+
+def default_bar_anim(name, start=0.8, end=9.6, fps=FPS, fake=FAKE_XP_BAR, frame="SmoothExperienceBarDefaultFrame",
+                     settings=None, scenario=SCENARIO):
     """The liquid inside one of the game's bars: the experience bar playing kills, a turn-in and a level-up, or
     with fake, frame, settings and scenario, the reputation bar."""
     b = DEFAULT_BAR
@@ -146,7 +160,7 @@ def default_bar_gif(name, start=0.8, end=9.6, fps=20, fake=FAKE_XP_BAR, frame="S
     ImageDraw.Draw(base).rectangle([b["left"], b["top"], b["left"] + b["width"] - 1, b["top"] + b["height"] - 1],
                                    fill=(10, 8, 7))
     k = b["ui_scale"]
-    s = Session(ADDON, settings or {"bars": "default"}, scenario=scenario,
+    s = Session(ADDON, dict(GLASS, **(settings or {"bars": "default"})), scenario=scenario,
                 before_login=SEED_BEFORE + fake % (b["width"] / k, b["height"] / k),
                 after_login=SEED_AFTER, frame=frame)
 
@@ -161,28 +175,19 @@ def default_bar_gif(name, start=0.8, end=9.6, fps=20, fake=FAKE_XP_BAR, frame="S
     while s.t < end:
         s.run_until(s.t + 1 / fps)
         frames.append(s.render(base, b["left"], b["top"], k, under_text=segment_lines))
-    # One palette for every frame and no dithering: the art stays still, so only the bar changes
-    # between frames and the file stays small.
-    sample = Image.new("RGB", (base.width, base.height * 6))
-    for i, f in enumerate(np.linspace(0, len(frames) - 1, 6).astype(int)):
-        sample.paste(frames[f], (0, i * base.height))
-    palette = sample.quantize(colors=255, method=Image.MEDIANCUT)
-    frames = [f.quantize(palette=palette, dither=Image.Dither.NONE) for f in frames]
-    path = os.path.join(OUT, name)
-    frames[0].save(path, save_all=True, append_images=frames[1:], duration=int(1000 / fps), loop=0, optimize=True)
-    print("wrote", path, f"{len(frames)} frames, {os.path.getsize(path) // 1024} KB")
+    save_webp(frames, name, fps)
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
 
-    default_bar_gif("default-bar.gif")
+    default_bar_anim("default-bar.webp")
     # The liquid in the game's reputation bar: gains on Neutral, then the pour into Friendly's green.
-    default_bar_gif("reputation.gif", start=0.6, end=7.8, fake=FAKE_REP_BAR, frame="SmoothExperienceBarReputationFrame",
-                    settings={"repBar": True}, scenario=REP_SCENARIO)
+    default_bar_anim("reputation.webp", start=0.6, end=7.8, fake=FAKE_REP_BAR, frame="SmoothExperienceBarReputationFrame",
+                     settings={"repBar": True}, scenario=REP_SCENARIO)
 
-    # One bar, mid quest turn-in, in glass: motes streaming and the liquid surging.
-    save(snapshot(4.2, GLASS), "hero.png")
+    # One bar, mid quest turn-in: motes streaming and the liquid surging.
+    save(snapshot(4.2), "hero.png")
 
     # The turn-in as three steps.
     img = backdrop(W, H)
@@ -243,18 +248,16 @@ def main():
         label(img, standing, ox, oy - 12, size=22)
     save(img, "reputation.png")
 
-    # Animated: kills, the turn-in and the level-up, in glass.
+    # Animated: kills, the turn-in and the level-up.
     gw, gh, k = 1000, 260, 1.4
     bg = backdrop(gw, gh)
-    s = session(GLASS)
+    s = session()
     s.run_until(0.8)
     frames = []
     while s.t < 9.6:
-        s.run_until(s.t + 1 / 25)
-        frames.append(s.render(bg, (gw - 600 * k) / 2, 105, k).quantize(colors=255, method=Image.MEDIANCUT))
-    path = os.path.join(OUT, "hero.gif")
-    frames[0].save(path, save_all=True, append_images=frames[1:], duration=40, loop=0, optimize=True)
-    print("wrote", path, f"{len(frames)} frames, {os.path.getsize(path) // 1024} KB")
+        s.run_until(s.t + 1 / FPS)
+        frames.append(s.render(bg, (gw - 600 * k) / 2, 105, k))
+    save_webp(frames, "hero.webp")
 
 
 if __name__ == "__main__":

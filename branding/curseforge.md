@@ -1,4 +1,4 @@
-![Smooth Experience Bar: an experience bar whose fill flows like liquid as XP is gained, a quest is turned in and the character levels up](https://raw.githubusercontent.com/Jordanburch101/smooth-experience-bar/refs/heads/main/branding/gallery/hero.gif)
+![Smooth Experience Bar: an experience bar whose fill flows like liquid as XP is gained, a quest is turned in and the character levels up](https://raw.githubusercontent.com/Jordanburch101/smooth-experience-bar/refs/heads/main/branding/gallery/hero.webp)
 
 A lightweight standalone take on the Luxthos Experience Bar WeakAura, with quest and rested XP, reputation, session stats and optional themes. No WeakAuras required.
 
@@ -16,7 +16,7 @@ A lightweight standalone take on the Luxthos Experience Bar WeakAura, with quest
 
 ## Inside the Default Experience Bar
 
-![The liquid filling the game's own experience bar between the action bars, through kills, a quest turn-in and a level-up](https://raw.githubusercontent.com/Jordanburch101/smooth-experience-bar/refs/heads/main/branding/gallery/default-bar.gif)
+![The liquid filling the game's own experience bar between the action bars, through kills, a quest turn-in and a level-up](https://raw.githubusercontent.com/Jordanburch101/smooth-experience-bar/refs/heads/main/branding/gallery/default-bar.webp)
 
 *   The liquid can fill the game's own experience bar, keeping its frame and position, and it follows Edit Mode
 *   Pick what shows on its left, in the middle and on its right: time this level, XP, percentage, XP per hour, time to level, session time or rested XP
@@ -25,7 +25,7 @@ A lightweight standalone take on the Luxthos Experience Bar WeakAura, with quest
 
 ## Reputation
 
-![The liquid filling the game's own reputation bar, pouring through Neutral in yellow and on into Friendly's green](https://raw.githubusercontent.com/Jordanburch101/smooth-experience-bar/refs/heads/main/branding/gallery/reputation.gif)
+![The liquid filling the game's own reputation bar, pouring through Neutral in yellow and on into Friendly's green](https://raw.githubusercontent.com/Jordanburch101/smooth-experience-bar/refs/heads/main/branding/gallery/reputation.webp)
 
 *   **Default Reputation Bar:** the liquid fills the game's own reputation bar while you watch a faction (tick Show as Experience Bar for one in the Reputation panel)
 *   **Standing colours:** the game's colour for your standing, from red at Hated to green from Friendly, or any of the themes

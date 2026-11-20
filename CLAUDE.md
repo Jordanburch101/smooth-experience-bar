@@ -14,8 +14,8 @@ The README covers the layout and tools; this file holds the rules.
   commit; it exits 1 on any failed check. The mock (`tools/harness/wowmock.lua`) should be as strict as the
   client: when the client rejects something the mock accepted, make the mock reject it too.
 - **Visual changes:** render a preview (`tools/harness/run.py`) and look at it. The Gallery workflow
-  rebuilds `branding/gallery/` (`tools/harness/gallery.py`: every image, including `hero.gif` and
-  `default-bar.gif`) on every push to `main` and commits the images, so don't commit gallery images by hand.
+  rebuilds `branding/gallery/` (`tools/harness/gallery.py`: every image, including `hero.webp` and
+  `default-bar.webp`) on every push to `main` and commits the images, so don't commit gallery images by hand.
   Pull after pushing: the workflow's commit lands on `main`.
 - **Commits:** stage the files you changed by name, never `git add -A`; the folder can hold files that are
   not part of the repo. Commit messages are plain and professional.

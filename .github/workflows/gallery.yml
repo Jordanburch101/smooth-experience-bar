@@ -1,5 +1,5 @@
-# On every push to main: rebuild the gallery (branding/gallery: the listing screenshots, hero.gif,
-# default-bar.gif and reputation.gif) from the addon's code and commit the images when they changed, so they always
+# On every push to main: rebuild the gallery (branding/gallery: the listing screenshots, hero.webp,
+# default-bar.webp and reputation.webp) from the addon's code and commit the images when they changed, so they always
 # show the bar as it is. A push made with the workflow's own token starts no workflows, so the
 # commit does not run this again.
 name: Gallery
