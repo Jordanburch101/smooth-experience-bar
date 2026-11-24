@@ -40,6 +40,12 @@ local SESSION_MAX_AGE = 86400 * 3
 local DEFAULTS = {
     point = { "TOP", "UIParent", "TOP", 0, -40 },
     theme = "luxthos",
+    -- The colours of completed quest and rested XP: the theme's, or the player's own as "RRGGBB" ("" until one
+    -- is picked, which is still the theme's).
+    customQuestColor = false,
+    questColor = "",
+    customRestedColor = false,
+    restedColor = "",
     scale = 0.65,
     width = 600,
     height = 30,
@@ -489,17 +495,55 @@ local function ResolveTheme(key)
     return t
 end
 
+local HEX_COLOUR = "^(%x%x)(%x%x)(%x%x)$"
+
+-- The player's own colour for a segment, with the theme's opacity; nil while it takes the theme's.
+local function CustomColour(on, hex, themed)
+    local r, g, b = hex:match(HEX_COLOUR)
+    if not (on and r) then return end
+    return { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255, themed[4] or 1 }
+end
+
+-- A theme with the player's own quest and rested colours in place of its own.
+local function WithCustomColours(t)
+    local quest = CustomColour(db.customQuestColor, db.questColor, t.quest)
+    local rested = CustomColour(db.customRestedColor, db.restedColor, t.rested)
+    if not (quest or rested) then return t end
+    return setmetatable({
+        quest = quest, questText = quest and db.questColor,
+        rested = rested, restedText = rested and db.restedColor,
+    }, { __index = t })
+end
+
+local baseTheme -- the theme before the player's own colours; each view has its own in v.baseTheme
+
+local function ApplySegmentColours(v)
+    v.restedTex:SetVertexColor(unpack(v.theme.rested))
+    v.questTex:SetVertexColor(unpack(v.theme.quest))
+end
+
 local function ApplyTheme()
-    theme = ResolveTheme(previewTheme or db.theme)
+    baseTheme = ResolveTheme(previewTheme or db.theme)
+    theme = WithCustomColours(baseTheme)
     for _, v in ipairs(views) do
-        local t = v.themeKey and ResolveTheme(v.themeKey) or theme
+        v.baseTheme = v.themeKey and ResolveTheme(v.themeKey) or baseTheme
+        local t = WithCustomColours(v.baseTheme)
         v.theme = t
         v.bg:SetVertexColor(unpack(t.bg))
-        v.restedTex:SetVertexColor(unpack(t.rested))
-        v.questTex:SetVertexColor(unpack(t.quest))
+        ApplySegmentColours(v)
         v.leadTex:SetVertexColor(unpack(t.lead))
         v.flash:SetVertexColor(unpack(t.flash))
         v.liquid:SetTheme(t)
+    end
+end
+
+-- Only the quest and rested colours, so the liquid carries on undisturbed while the player drags in the picker.
+local function ApplyCustomColours()
+    theme = WithCustomColours(baseTheme)
+    for _, v in ipairs(views) do
+        v.theme = WithCustomColours(v.baseTheme)
+        ApplySegmentColours(v)
+        v.liquid:SetSegmentColours(v.theme)
     end
 end
 
@@ -824,10 +868,10 @@ local SKIN_SLOTS = {
         if not s then return "" end
         return Labelled(labels, "Session: ", s.session)
     end },
-    { key = "rested", name = "Rested", text = function(v, _, labels)
+    -- White: it can sit on the rested segment, which the rested number's colour elsewhere matches.
+    { key = "rested", name = "Rested", text = function(_, _, labels)
         if maxed then return "" end
-        return Labelled(labels, "Rested: ",
-            string.format("|cFF%s%s%%|r", v.theme.restedText, Round1(T.rested / T.max * 100)))
+        return Labelled(labels, "Rested: ", Round1(T.rested / T.max * 100) .. "%")
     end },
 }
 local SKIN_SLOT_TEXT = {}
@@ -1735,7 +1779,23 @@ function Core.SkinSlots()
     return list
 end
 
+local function ApplyCustomColourSetting()
+    ApplyCustomColours()
+    RenderBar()
+    RenderText(true)
+end
+
+-- The colour a segment ("quest" or "rested") has now, the theme's or the player's own.
+function Core.SegmentColour(segment)
+    local c = theme[segment]
+    return c[1], c[2], c[3]
+end
+
 local SETTING_APPLY = {
+    customQuestColor = ApplyCustomColourSetting,
+    questColor = ApplyCustomColourSetting,
+    customRestedColor = ApplyCustomColourSetting,
+    restedColor = ApplyCustomColourSetting,
     theme = function()
         previewTheme = nil -- picked from the menu: the saved theme takes over
         ApplyTheme()
@@ -1814,6 +1874,20 @@ end
 -- onLoaded and onWorld run after this file's own ADDON_LOADED and PLAYER_ENTERING_WORLD handling, so they never
 -- depend on which frame the client hands the event to first.
 local validators, onLoaded, onWorld = {}, {}, {}
+
+validators[1] = function(profile)
+    local fixed = {}
+    for _, key in ipairs({ "customQuestColor", "customRestedColor" }) do
+        if profile[key] ~= nil and type(profile[key]) ~= "boolean" then fixed[key] = DEFAULTS[key] end
+    end
+    for _, key in ipairs({ "questColor", "restedColor" }) do
+        local hex = profile[key]
+        if hex ~= nil and hex ~= "" and not (type(hex) == "string" and hex:match(HEX_COLOUR)) then
+            fixed[key] = DEFAULTS[key]
+        end
+    end
+    return fixed
+end
 
 local function Validated(profile)
     local out = {}

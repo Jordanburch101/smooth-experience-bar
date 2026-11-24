@@ -234,6 +234,7 @@ local ROW_TEMPLATES = {
     SettingsCheckboxControlTemplate = true, SettingsSliderControlTemplate = true,
     SettingsDropdownControlTemplate = true, SettingButtonControlTemplate = true,
     SettingsListSectionHeaderTemplate = true, SettingsCheckboxSliderControlTemplate = true,
+    SettingsCheckboxWithColorSwatchControlTemplate = true,
 }
 local TEMPLATES = { MinimalScrollBar = true, UIPanelButtonTemplate = true, UIRadioButtonTemplate = true,
                     ButtonFrameTemplate = true, MinimalSliderWithSteppersTemplate = true }
@@ -248,6 +249,11 @@ function RowTemplate.Init(self, initializer)
     if d.sliderSetting then self.sliderValue = d.sliderSetting:GetValue() end
     -- SettingsDropdownControlMixin:InitDropdown
     if self.Control and self.forceSteppersHidden then self.Control:HideSteppers() end
+    -- SettingsCheckboxWithColorSwatchControlMixin:Init
+    if self.ColorSwatch then
+        self.ColorSwatch.scripts.OnClick = d.OnSwatchClick
+        if d.initialSwatchColorFn then self.ColorSwatch:SetColor(d.initialSwatchColorFn()) end
+    end
 end
 function RowTemplate.Release(self) self.initialized = false end
 
@@ -315,6 +321,18 @@ function CreateFrame(_, name, parent, template)
         f.Control.Dropdown:SetWidth(220)
         function f.Control:HideSteppers() self.steppersHidden = true end
     end
+    -- SettingsCheckboxWithColorSwatchControlMixin:OnLoad, and ColorSwatchMixin:SetColor. With clickRequiresSet
+    -- the swatch takes clicks only while the box is ticked.
+    if template == "SettingsCheckboxWithColorSwatchControlTemplate" then
+        f.ColorSwatch = CreateFrame("Button", nil, f)
+        function f.ColorSwatch:SetColor(color) self.shownColor = { color:GetRGB() } end
+        function f.ColorSwatch:Click()
+            local d = f.initializer.data
+            if d.clickRequiresSet and d.setting:GetValue() == d.invertClickRequiresSet then return false end
+            self.scripts.OnClick(self, "LeftButton")
+            return true
+        end
+    end
     if template == "MinimalSliderWithSteppersTemplate" then __newMinimalSlider(f) end
     -- The game's window: background, inset, a title and a close button that hides it.
     if template == "ButtonFrameTemplate" then
@@ -335,6 +353,7 @@ end
 local Color = {}
 Color.__index = Color
 function Color:SetRGBA(r, g, b, a) self.r, self.g, self.b, self.a = r, g, b, a end
+function Color:GetRGB() return self.r, self.g, self.b end
 function Color:GetRGBA() return self.r, self.g, self.b, self.a end
 function CreateColor(r, g, b, a) return setmetatable({ r = r, g = g, b = b, a = a or 1 }, Color) end
 
@@ -584,6 +603,37 @@ function CreateSettingsCheckboxSliderInitializer(cbSetting, cbLabel, cbTooltip, 
         sliderSetting = sliderSetting, sliderOptions = sliderOptions, sliderLabel = sliderLabel,
         sliderTooltip = sliderTooltip,
     })
+end
+-- A checkbox with a colour swatch beside it (Blizzard_SettingControls). The swatch's tooltip needs its texts.
+function CreateSettingsCheckboxWithColorSwatchInitializer(s, tooltip, swatchClick, clickRequiresSet, invertClickRequiresSet,
+                                                          initialSwatchColorFn, swatchTooltipTitle, swatchTooltipText)
+    assert(s.vtype == "boolean", "checkbox swatch on non-boolean " .. s.key)
+    assert(type(swatchClick) == "function" and type(swatchTooltipTitle) == "string"
+        and type(swatchTooltipText) == "string", "checkbox swatch: click and tooltip")
+    local data = SettingData(s, nil, tooltip)
+    data.OnSwatchClick, data.clickRequiresSet = swatchClick, clickRequiresSet
+    data.invertClickRequiresSet, data.initialSwatchColorFn = not not invertClickRequiresSet, initialSwatchColorFn
+    return NewInitializer("SettingsCheckboxWithColorSwatchControlTemplate", "checkboxswatch", data)
+end
+-- ColorPickerFrame. Setting it up reports the colour it opens on, as in the client. __pickColor is the player
+-- dragging in it, __cancelColor its Cancel.
+ColorPickerFrame = NewRegion("Frame", UIParent)
+ColorPickerFrame.shown = false
+function ColorPickerFrame:GetColorRGB() return self.r, self.g, self.b end
+function ColorPickerFrame:SetupColorPickerAndShow(info)
+    assert(type(info.r) == "number" and type(info.g) == "number" and type(info.b) == "number"
+        and type(info.swatchFunc) == "function", "ColorPickerFrame needs r, g, b and swatchFunc")
+    self.info, self.shown = info, true
+    __pickColor(info.r, info.g, info.b)
+end
+function __pickColor(r, g, b)
+    ColorPickerFrame.r, ColorPickerFrame.g, ColorPickerFrame.b = r, g, b
+    ColorPickerFrame.info.swatchFunc()
+end
+function __cancelColor()
+    local info = ColorPickerFrame.info
+    if info.cancelFunc then info.cancelFunc({ r = info.r, g = info.g, b = info.b }) end
+    ColorPickerFrame.shown = false
 end
 -- The game calls getOptions each time the menu opens; tests call it the same way.
 function Settings.CreateDropdownInitializer(s, getOptions, tooltip)

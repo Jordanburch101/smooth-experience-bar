@@ -126,6 +126,52 @@ local function TextRow(showKey, name, tooltip, sizeKey)
     end
 end
 
+local swatches = {} -- a function for each swatch, to show the colour in use
+
+local function RefreshSwatches()
+    for _, refresh in ipairs(swatches) do refresh() end
+end
+
+local function HexColour(r, g, b)
+    return ("%02X%02X%02X"):format(math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+end
+
+-- A segment's colour: whether it is the player's own, and a swatch beside it that opens the game's colour
+-- picker, off while the theme's is used (the game's own checkbox-and-swatch row). The swatch shows the colour
+-- in use either way.
+local function ColourRow(customKey, key, name, segment, tooltip)
+    if not (CreateSettingsCheckboxWithColorSwatchInitializer and ColorPickerFrame
+        and ColorPickerFrame.SetupColorPickerAndShow) then
+        return
+    end
+    local custom, colour = Register(customKey, "Custom " .. name), Register(key, name)
+    local function Current() return CreateColor(ns.Core.SegmentColour(segment)) end
+    -- Opening the picker reports the colour it opened on, which leaves the setting as it was.
+    local function OpenPicker()
+        local before = colour:GetValue()
+        local r, g, b = ns.Core.SegmentColour(segment)
+        local start = HexColour(r, g, b)
+        ColorPickerFrame:SetupColorPickerAndShow({
+            r = r, g = g, b = b, hasOpacity = false,
+            swatchFunc = function()
+                local hex = HexColour(ColorPickerFrame:GetColorRGB())
+                colour:SetValue(hex == start and before or hex)
+            end,
+            cancelFunc = function() colour:SetValue(before) end,
+        })
+    end
+    local row = Row(CreateSettingsCheckboxWithColorSwatchInitializer(custom, tooltip, OpenPicker, true, false, Current,
+        name, "Click to pick the colour."))
+    local swatch = row.frame.ColorSwatch
+    row.refresh = function()
+        swatch:SetColor(Current())
+        swatch:SetAlpha(custom:GetValue() and 1 or 0.4)
+    end
+    row.refresh()
+    swatches[#swatches + 1] = row.refresh
+    watchers[customKey], watchers[key], watchers.theme = RefreshSwatches, RefreshSwatches, RefreshSwatches
+end
+
 local function Dropdown(setting, tooltip, getOptions, when)
     Row(Settings.CreateDropdownInitializer(setting, getOptions, tooltip), nil, when)
 end
@@ -363,6 +409,10 @@ function Options.Register(savedDB, defaultValues)
 
     Header("Look")
     Dropdown(Register("theme", "Experience Theme"), "Colours and effects of the experience bars.", ThemeOptions)
+    ColourRow("customQuestColor", "questColor", "Quest Colour", "quest", "Pick the colour of completed quest XP, in "
+        .. "the bar and its numbers. Untick for the theme's.")
+    ColourRow("customRestedColor", "restedColor", "Rested Colour", "rested", "Pick the colour of rested XP, in the "
+        .. "bar and its numbers (the text inside the default bar stays white). Untick for the theme's.")
     Dropdown(Register("repTheme", "Reputation Theme"), "Colours and effects of reputation, on the game's "
         .. "reputation bar and on the separate bar while it tracks reputation. Standing Colours takes the game's "
         .. "colour for your standing, from red at Hated to green from Friendly up.", RepThemeOptions, RepUsed)

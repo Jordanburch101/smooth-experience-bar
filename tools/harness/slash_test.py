@@ -216,8 +216,8 @@ lua.execute("__settings.bars:SetValue('separate')")
 setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n = n + 1 end return n end")()
 size_sliders = [i for i in items if i.kind == "dropdown" and i.frame.SizeSlider]
 covered = (sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown"))
-           + 2 * sum(1 for i in items if i.kind == "checkboxslider") + len(size_sliders))
-check(covered == setting_count == 64, f"a control for every setting ({covered} of {setting_count})")
+           + 2 * sum(1 for i in items if i.kind in ("checkboxslider", "checkboxswatch")) + len(size_sliders))
+check(covered == setting_count == 68, f"a control for every setting ({covered} of {setting_count})")
 # Each bar has its own section, shown only while that bar is used.
 shown_rows = lambda: {i.key or i.name for i in G.__settingsRows().values() if i.frame.shown}
 bars_dd = next(i for i in items if i.kind == "dropdown" and i.key == "bars")
@@ -415,6 +415,47 @@ n, first, last = segment_lines(G.SmoothExperienceBarFrame)
 check((n, first, last) == (19, 40, 760), f"Segmented Bar: lines follow the width ({n}, {first}, {last})")
 lua.execute("__settings.width:SetValue(600); __settings.segments:SetValue(false)")
 check(segment_lines(G.SmoothExperienceBarFrame)[0] == 0, "Segmented Bar off again")
+
+print("== quest and rested colours")
+swatch_rows = {i.key: i for i in items if i.kind == "checkboxswatch"}
+check(list(swatch_rows) == ["customQuestColor", "customRestedColor"], f"a swatch row for each ({list(swatch_rows)})")
+swatch = swatch_rows["customRestedColor"].frame.ColorSwatch
+seg = lambda which: [round(x, 3) for x in ns.Bar.main[which + "Tex"].vc.values()]
+numbers = lua.eval("function() local out for _, r in ipairs(__regions) do if r.kind == 'FontString' and r.text "
+                   "and r.text:find('^Completed: ') then out = r.text end end return out end")
+shown_colour = lambda: [round(x, 3) for x in swatch.shownColor.values()]
+themed = [0.31, 0.565, 1, 0.545]
+check(seg("rested") == themed and shown_colour() == themed[:3], f"the theme's until ticked ({seg('rested')})")
+check(swatch.Click(swatch) is False, "the swatch is off while the theme's colour is used")
+lua.execute("__settings.customRestedColor:SetValue(true)")
+check(seg("rested") == themed, "ticked with nothing picked yet: still the theme's")
+check(swatch.Click(swatch) is True and lua.eval("ColorPickerFrame.shown"), "the swatch opens the game's picker")
+check(lua.eval("__settings.restedColor:GetValue()") == "", "opening the picker changes nothing")
+active_motes = lambda: sum(1 for m in ns.Bar.main.liquid.motes.values() if m.active)
+lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('test')")
+run(0.8)
+motes = active_motes()
+lua.execute("__pickColor(0, 1, 0.2)")
+check(motes > 0 and active_motes() == motes, f"picking leaves the liquid's particles alone ({motes} -> {active_motes()})")
+check(seg("rested") == [0, 1, 0.2, 0.545] and shown_colour() == [0, 1, 0.2],
+      f"a picked colour is on the bar and the swatch, at the theme's opacity ({seg('rested')})")
+check("Rested: |cFF00FF33" in numbers() and "Completed: |cFFFF9700" in numbers(),
+      f"its number follows, and the other keeps the theme's ({numbers()})")
+lua.execute("__cancelColor()")
+check(seg("rested") == themed and lua.eval("__settings.restedColor:GetValue()") == "", "Cancel goes back to what it was")
+swatch.Click(swatch)
+lua.execute("__pickColor(0, 1, 0.2); __settings.theme:SetValue('class')")
+check(seg("rested")[:3] == [0, 1, 0.2], "a picked colour stays through a theme change")
+lua.execute("__settings.theme:SetValue('luxthos'); __settings.customRestedColor:SetValue(false)")
+check(seg("rested") == themed and shown_colour() == themed[:3] and "Rested: |cFF4F90FF" in numbers(),
+      f"unticked: the theme's again ({seg('rested')}, {numbers()})")
+lua.execute("__settings.customRestedColor:SetValue(true)")
+check(seg("rested")[:3] == [0, 1, 0.2], "ticked again: the picked colour was kept")
+lua.execute("__settings.customRestedColor:SetValue(false); __settings.restedColor:SetValue('')")
+lua.execute("__settings.questColor:SetValue('ff00aa'); __settings.customQuestColor:SetValue(true)")
+check(seg("quest") == [1, 0, 0.667, 1] and "Completed: |cFFff00aa" in numbers(), f"quest colour too ({seg('quest')})")
+lua.execute("__settings.customQuestColor:SetValue(false); __settings.questColor:SetValue('')")
+slash("test off", 2)
 
 print("== themes")
 for i in range(len(ns.Themes.order)):
@@ -801,8 +842,8 @@ lua.execute("SmoothExperienceBarCharDB.startTime, SmoothExperienceBarCharDB.gain
 lua.execute("__settings.defaultLabels:SetValue(true)")
 lua.execute("__settings.defaultCentre:SetValue('percent'); __settings.defaultRight:SetValue('rested')")
 t = slots()
-check(t.centre == "65.8% (70.6%)" and t.right.startswith("Rested: |cFF") and t.right.endswith("6.4%|r"),
-      f"percentage in the middle, rested on the right in the theme's colour ({t.centre} | {t.right})")
+check(t.centre == "65.8% (70.6%)" and t.right == "Rested: 6.4%",
+      f"percentage in the middle, rested on the right in white, to read over its segment ({t.centre} | {t.right})")
 # While the liquid pours, the XP follows it; the time on the left is left to the 1 s ticker.
 lua.execute("__settings.defaultCentre:SetValue('xp'); __settings.defaultRight:SetValue('none')")
 lua.execute("SlashCmdList.SMOOTHEXPERIENCEBAR('test')")
@@ -1351,7 +1392,8 @@ check(lua2.eval("SmoothExperienceBarDB.theme") is None and lua2.eval("SmoothExpe
 copy_dd = [i for i in lua2.eval("__settingsRows()").values() if i.kind == "dropdown" and i.key == "copyFrom"]
 check(copy_dd and copy_dd[0].options[1].label == "No other characters yet", "copy list says when there is no one to copy")
 lua2.execute("SmoothExperienceBarDB.profiles['Alt - Mockrealm'] = { theme = 'frost', width = 640, glass = false, lightning = false, "
-             "defaultCentre = 'xpHour', defaultRight = 'bogus' }")
+             "defaultCentre = 'xpHour', defaultRight = 'bogus', customRestedColor = true, restedColor = 'C0FFEE', "
+             "customQuestColor = 'yes', questColor = 'orange' }")
 lua2.execute("__settings.copyFrom:SetValue('Alt - Mockrealm')")
 button = [i for i in lua2.eval("__settingsRows()").values() if i.kind == "button" and i.name == "Copy Settings"]
 check(bool(button), "copy button on the settings page")
@@ -1361,6 +1403,8 @@ for _ in range(30):
 check(mine.theme == "frost" and mine.width == 640 and not mine.glass and not mine.lightning,
       "copying another character's profile replaces this character's settings")
 check(G2.SmoothExperienceBarFrame.w == 640, "copied size applied to the bar")
+check(mine.customRestedColor is True and mine.restedColor == "C0FFEE" and mine.customQuestColor is False
+      and mine.questColor == "", "copied colours kept, and ones that are not colours go back to the theme's")
 check(mine.defaultCentre == "xpHour" and mine.defaultRight == "none",
       "copied text choices kept, and one the addon does not know goes back to the default")
 check(G2.__settings.theme.GetValue(G2.__settings.theme) == "frost", "settings page shows the copied values")

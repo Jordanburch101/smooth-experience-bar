@@ -331,6 +331,13 @@ function Liquid:SetTheme(theme)
     end
 end
 
+-- The completed quest and rested colours of a theme that is otherwise the one in use.
+function Liquid:SetSegmentColours(theme)
+    self.theme = theme
+    self.contact = nil -- recoloured on the next SetContact
+    self.restGlow:SetVertexColor(theme.rested[1], theme.rested[2], theme.rested[3])
+end
+
 function Liquid:LayerTexture(layer, name)
     local file = MEDIA .. name
     layer.main:SetTexture(file, "REPEAT", "REPEAT")
