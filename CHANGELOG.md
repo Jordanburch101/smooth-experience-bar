@@ -9,12 +9,12 @@ broken and now works. Leave out internal changes. Sections are
 ## 1.9.0
 
 ### New
-- **Quest and Rested Colours**: pick your own colour for completed quest XP
-  and for rested XP, in the bar and its numbers (Look section).
+- **Quest, Rested and Text Colours**: pick your own colour for completed
+  quest XP, for rested XP and for the bars' text (Look section).
 
 ### Fixed
-- **Rested Text**: rested XP inside the default bar is white, so it can be
-  read over the rested segment.
+- **Rested Text**: rested XP inside the default bar is white like the rest of
+  its text, so it can be read over the rested segment.
 - **WoW Forever Profiles**: a character not played since 1.2 finds its old
   settings again, now that the game no longer gives a realm name.
 

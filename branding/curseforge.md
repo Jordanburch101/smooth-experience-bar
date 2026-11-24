@@ -51,7 +51,7 @@ Open the settings with `/seb`, by right-clicking the bar, or from Options > AddO
 *   Show the separate bar, the default experience bar, or both, and the default reputation bar
 *   Unlock to drag the separate bar anywhere and resize it from the corner, or set width, height and scale exactly
 *   Toggle each line of text on or off, and make each one bigger or smaller
-*   Keep the theme's colours for completed quest and rested XP, or pick your own
+*   Pick your own colours for completed quest XP, rested XP and the text, or keep the usual ones
 *   Pick the font from the game's own fonts, with or without an outline
 *   Fade the separate bar when idle; it comes back on hover and on gains
 *   Optionally hide the default experience bar, or divide the separate bar into 20 segments like the game's

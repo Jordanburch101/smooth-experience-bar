@@ -72,6 +72,35 @@ local function HSV(h, s, v)
     return v, p, q
 end
 
+-- The player's own colours, saved as "RRGGBB" ("" until one is picked). r, g, b in 0..1, or nil for anything else.
+function Themes.ParseHex(hex)
+    if type(hex) ~= "string" then return end
+    local r, g, b = hex:match("^(%x%x)(%x%x)(%x%x)$")
+    if r then return tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255 end
+end
+
+-- The player's own colour, with the opacity of the usual one; nil while the usual one is used.
+local function CustomColour(on, hex, usual)
+    local r, g, b = Themes.ParseHex(hex)
+    if on and r then return { r, g, b, usual[4] or 1 } end
+end
+
+-- A theme with the player's own quest and rested colours in place of its own.
+function Themes.WithCustomColours(t, db)
+    local quest = CustomColour(db.customQuestColor, db.questColor, t.quest)
+    local rested = CustomColour(db.customRestedColor, db.restedColor, t.rested)
+    if not (quest or rested) then return t end
+    return setmetatable({
+        quest = quest, questText = quest and db.questColor,
+        rested = rested, restedText = rested and db.restedColor,
+    }, { __index = t })
+end
+
+-- The text's colour: white, or the player's own.
+function Themes.TextColour(db)
+    return CustomColour(db.customTextColor, db.textColor, WHITE) or WHITE
+end
+
 -- A full colour set built from one base colour, for class and similar themes.
 local function FromColor(c, template)
     local t = {

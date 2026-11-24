@@ -209,12 +209,13 @@ class Session:
         text = r.text or ""
         if not text:
             return
-        segments, color = [], (255, 255, 255)
+        base = tuple(int(round(r.textColor[i] * 255)) for i in (1, 2, 3)) if r.textColor else (255, 255, 255)
+        segments, color = [], base
         for part in re.split(r"(\|c[0-9a-fA-F]{8}|\|r)", text):
             if part.startswith("|c"):
                 color = tuple(int(part[i:i + 2], 16) for i in (4, 6, 8))
             elif part == "|r":
-                color = (255, 255, 255)
+                color = base
             elif part:
                 segments.append((part, color))
         f = font(r.fontSize * k, r.fontFile)

@@ -94,6 +94,8 @@ local DEFAULTS = {
     resetOnReload = false,
     font = "GameFontNormal", -- a name from FONT_OBJECTS
     fontOutline = true,
+    customTextColor = false, -- the text's colour: white, or the player's own as questColor
+    textColor = "",
 
     speed = 1,
     waves = true,
@@ -262,7 +264,6 @@ local function NewView(frame, width, height, skinned, detached)
         fs:SetDrawLayer("OVERLAY", 7)
         fs:SetShadowColor(0, 0, 0, 1)
         fs:SetShadowOffset(1, -1)
-        fs:SetTextColor(1, 1, 1, 1)
         v.texts[#v.texts + 1] = { fs = fs, spec = spec }
         v[spec.name] = fs
     end
@@ -290,11 +291,18 @@ local function TextSizeFactor(v, spec)
     return min(MAX_TEXT_SIZE, max(MIN_TEXT_SIZE, pct)) / 100
 end
 
--- Text size, font and outline. A font the client cannot load (SetFont gives false) falls back to the
+-- Numbers in a colour of their own (the separate bar's quest and rested XP) keep it.
+local function ApplyTextColour(v)
+    local c = ns.Themes.TextColour(db)
+    for _, t in ipairs(v.texts) do t.fs:SetTextColor(c[1], c[2], c[3], 1) end
+end
+
+-- Text size, font, outline and colour. A font the client cannot load (SetFont gives false) falls back to the
 -- game's normal one rather than leaving the text blank.
 -- A view's insetL / insetR move its left and right text in, clear of the game's art over its ends.
 local function ApplyTextSize(v)
     local k = min(1.6, max(0.6, v.height / BASE_HEIGHT))
+    ApplyTextColour(v)
     local file, flags = FontFile(db.font) or FONT, db.fontOutline and "OUTLINE" or ""
     for _, t in ipairs(v.texts) do
         local s = t.spec
@@ -495,26 +503,6 @@ local function ResolveTheme(key)
     return t
 end
 
-local HEX_COLOUR = "^(%x%x)(%x%x)(%x%x)$"
-
--- The player's own colour for a segment, with the theme's opacity; nil while it takes the theme's.
-local function CustomColour(on, hex, themed)
-    local r, g, b = hex:match(HEX_COLOUR)
-    if not (on and r) then return end
-    return { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255, themed[4] or 1 }
-end
-
--- A theme with the player's own quest and rested colours in place of its own.
-local function WithCustomColours(t)
-    local quest = CustomColour(db.customQuestColor, db.questColor, t.quest)
-    local rested = CustomColour(db.customRestedColor, db.restedColor, t.rested)
-    if not (quest or rested) then return t end
-    return setmetatable({
-        quest = quest, questText = quest and db.questColor,
-        rested = rested, restedText = rested and db.restedColor,
-    }, { __index = t })
-end
-
 local baseTheme -- the theme before the player's own colours; each view has its own in v.baseTheme
 
 local function ApplySegmentColours(v)
@@ -524,26 +512,16 @@ end
 
 local function ApplyTheme()
     baseTheme = ResolveTheme(previewTheme or db.theme)
-    theme = WithCustomColours(baseTheme)
+    theme = ns.Themes.WithCustomColours(baseTheme, db)
     for _, v in ipairs(views) do
         v.baseTheme = v.themeKey and ResolveTheme(v.themeKey) or baseTheme
-        local t = WithCustomColours(v.baseTheme)
+        local t = ns.Themes.WithCustomColours(v.baseTheme, db)
         v.theme = t
         v.bg:SetVertexColor(unpack(t.bg))
         ApplySegmentColours(v)
         v.leadTex:SetVertexColor(unpack(t.lead))
         v.flash:SetVertexColor(unpack(t.flash))
         v.liquid:SetTheme(t)
-    end
-end
-
--- Only the quest and rested colours, so the liquid carries on undisturbed while the player drags in the picker.
-local function ApplyCustomColours()
-    theme = WithCustomColours(baseTheme)
-    for _, v in ipairs(views) do
-        v.theme = WithCustomColours(v.baseTheme)
-        ApplySegmentColours(v)
-        v.liquid:SetSegmentColours(v.theme)
     end
 end
 
@@ -868,7 +846,7 @@ local SKIN_SLOTS = {
         if not s then return "" end
         return Labelled(labels, "Session: ", s.session)
     end },
-    -- White: it can sit on the rested segment, which the rested number's colour elsewhere matches.
+    -- In the text's colour: it can sit on the rested segment, which the rested number's colour elsewhere matches.
     { key = "rested", name = "Rested", text = function(_, _, labels)
         if maxed then return "" end
         return Labelled(labels, "Rested: ", Round1(T.rested / T.max * 100) .. "%")
@@ -1779,23 +1757,29 @@ function Core.SkinSlots()
     return list
 end
 
-local function ApplyCustomColourSetting()
-    ApplyCustomColours()
+-- Only the quest and rested colours, so the liquid carries on undisturbed while the player drags in the picker.
+local function ApplyCustomColours()
+    theme = ns.Themes.WithCustomColours(baseTheme, db)
+    for _, v in ipairs(views) do
+        v.theme = ns.Themes.WithCustomColours(v.baseTheme, db)
+        ApplySegmentColours(v)
+        v.liquid:SetSegmentColours(v.theme)
+    end
     RenderBar()
     RenderText(true)
 end
 
--- The colour a segment ("quest" or "rested") has now, the theme's or the player's own.
-function Core.SegmentColour(segment)
-    local c = theme[segment]
+-- The colour a segment ("quest" or "rested") or the text ("text") has now, the usual one or the player's own.
+function Core.CurrentColour(what)
+    local c = what == "text" and ns.Themes.TextColour(db) or theme[what]
     return c[1], c[2], c[3]
 end
 
 local SETTING_APPLY = {
-    customQuestColor = ApplyCustomColourSetting,
-    questColor = ApplyCustomColourSetting,
-    customRestedColor = ApplyCustomColourSetting,
-    restedColor = ApplyCustomColourSetting,
+    customQuestColor = ApplyCustomColours,
+    questColor = ApplyCustomColours,
+    customRestedColor = ApplyCustomColours,
+    restedColor = ApplyCustomColours,
     theme = function()
         previewTheme = nil -- picked from the menu: the saved theme takes over
         ApplyTheme()
@@ -1835,6 +1819,9 @@ local SETTING_APPLY = {
     showQuestRested = UpdateSessionTexts,
     font = ApplyTextAll,
     fontOutline = ApplyTextAll,
+    textColor = function()
+        for _, v in ipairs(allViews) do ApplyTextColour(v) end
+    end,
     waves = ApplyLiquidOptions,
     bubbles = ApplyLiquidOptions,
     sparkles = ApplyLiquidOptions,
@@ -1844,6 +1831,7 @@ local SETTING_APPLY = {
     rounding = ApplyRoundingAll,
     segments = ApplySegmentsAll,
 }
+SETTING_APPLY.customTextColor = SETTING_APPLY.textColor
 -- Each text line's size settings, on either bar.
 for _, spec in ipairs(TEXTS) do
     if spec.sizeKey then SETTING_APPLY[spec.sizeKey] = ApplyTextAll end
@@ -1877,14 +1865,12 @@ local validators, onLoaded, onWorld = {}, {}, {}
 
 validators[1] = function(profile)
     local fixed = {}
-    for _, key in ipairs({ "customQuestColor", "customRestedColor" }) do
+    for _, key in ipairs({ "customQuestColor", "customRestedColor", "customTextColor" }) do
         if profile[key] ~= nil and type(profile[key]) ~= "boolean" then fixed[key] = DEFAULTS[key] end
     end
-    for _, key in ipairs({ "questColor", "restedColor" }) do
+    for _, key in ipairs({ "questColor", "restedColor", "textColor" }) do
         local hex = profile[key]
-        if hex ~= nil and hex ~= "" and not (type(hex) == "string" and hex:match(HEX_COLOUR)) then
-            fixed[key] = DEFAULTS[key]
-        end
+        if hex ~= nil and hex ~= "" and not ns.Themes.ParseHex(hex) then fixed[key] = DEFAULTS[key] end
     end
     return fixed
 end

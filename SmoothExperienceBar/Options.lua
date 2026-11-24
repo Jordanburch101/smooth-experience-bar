@@ -136,20 +136,20 @@ local function HexColour(r, g, b)
     return ("%02X%02X%02X"):format(math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
 end
 
--- A segment's colour: whether it is the player's own, and a swatch beside it that opens the game's colour
--- picker, off while the theme's is used (the game's own checkbox-and-swatch row). The swatch shows the colour
--- in use either way.
-local function ColourRow(customKey, key, name, segment, tooltip)
+-- A colour: whether it is the player's own, and a swatch beside it that opens the game's colour picker, off
+-- while the usual one is used (the game's own checkbox-and-swatch row). The swatch shows the colour in use
+-- either way. what is what it colours, for Core.CurrentColour.
+local function ColourRow(customKey, key, name, what, tooltip)
     if not (CreateSettingsCheckboxWithColorSwatchInitializer and ColorPickerFrame
         and ColorPickerFrame.SetupColorPickerAndShow) then
         return
     end
     local custom, colour = Register(customKey, "Custom " .. name), Register(key, name)
-    local function Current() return CreateColor(ns.Core.SegmentColour(segment)) end
+    local function Current() return CreateColor(ns.Core.CurrentColour(what)) end
     -- Opening the picker reports the colour it opened on, which leaves the setting as it was.
     local function OpenPicker()
         local before = colour:GetValue()
-        local r, g, b = ns.Core.SegmentColour(segment)
+        local r, g, b = ns.Core.CurrentColour(what)
         local start = HexColour(r, g, b)
         ColorPickerFrame:SetupColorPickerAndShow({
             r = r, g = g, b = b, hasOpacity = false,
@@ -412,12 +412,15 @@ function Options.Register(savedDB, defaultValues)
     ColourRow("customQuestColor", "questColor", "Quest Colour", "quest", "Pick the colour of completed quest XP, in "
         .. "the bar and its numbers. Untick for the theme's.")
     ColourRow("customRestedColor", "restedColor", "Rested Colour", "rested", "Pick the colour of rested XP, in the "
-        .. "bar and its numbers (the text inside the default bar stays white). Untick for the theme's.")
+        .. "bar and its numbers (inside the default bar the number is in the text's colour). Untick for the theme's.")
     Dropdown(Register("repTheme", "Reputation Theme"), "Colours and effects of reputation, on the game's "
         .. "reputation bar and on the separate bar while it tracks reputation. Standing Colours takes the game's "
         .. "colour for your standing, from red at Hated to green from Friendly up.", RepThemeOptions, RepUsed)
     Dropdown(Register("font", "Font"), "Font of the bars' text, from the game's own fonts.", FontOptions)
     Checkbox("fontOutline", "Font Outline", "A dark outline around the text. Untick for a plain drop shadow.")
+    ColourRow("customTextColor", "textColor", "Text Colour", "text", "Pick the colour of the text on every bar, "
+        .. "reputation included. The completed quest and rested numbers around the separate bar keep their own. "
+        .. "Untick for white.")
 
     Header("Experience")
     Checkbox("showMaxLevel", "Show at Max Level", "Keep the experience bars visible at max level, showing time "

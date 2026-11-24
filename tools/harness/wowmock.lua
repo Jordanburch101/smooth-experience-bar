@@ -145,7 +145,11 @@ function Region:SetFont(file, size, flags)
 end
 function Region:SetShadowColor() end
 function Region:SetShadowOffset() end
-function Region:SetTextColor() end
+function Region:SetTextColor(r, g, b, a)
+    assert(self.kind == "FontString" and type(r) == "number" and type(g) == "number" and type(b) == "number",
+        "Usage: SetTextColor(r, g, b [, a])")
+    self.textColor = { r, g, b, a or 1 }
+end
 function Region:SetJustifyH() end
 function Region:SetJustifyV() end
 function Region:SetWordWrap() end

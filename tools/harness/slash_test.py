@@ -217,7 +217,7 @@ setting_count = lua.eval("function() local n = 0 for _ in pairs(__settings) do n
 size_sliders = [i for i in items if i.kind == "dropdown" and i.frame.SizeSlider]
 covered = (sum(1 for i in items if i.kind in ("checkbox", "slider", "dropdown"))
            + 2 * sum(1 for i in items if i.kind in ("checkboxslider", "checkboxswatch")) + len(size_sliders))
-check(covered == setting_count == 68, f"a control for every setting ({covered} of {setting_count})")
+check(covered == setting_count == 70, f"a control for every setting ({covered} of {setting_count})")
 # Each bar has its own section, shown only while that bar is used.
 shown_rows = lambda: {i.key or i.name for i in G.__settingsRows().values() if i.frame.shown}
 bars_dd = next(i for i in items if i.kind == "dropdown" and i.key == "bars")
@@ -416,9 +416,10 @@ check((n, first, last) == (19, 40, 760), f"Segmented Bar: lines follow the width
 lua.execute("__settings.width:SetValue(600); __settings.segments:SetValue(false)")
 check(segment_lines(G.SmoothExperienceBarFrame)[0] == 0, "Segmented Bar off again")
 
-print("== quest and rested colours")
+print("== quest, rested and text colours")
 swatch_rows = {i.key: i for i in items if i.kind == "checkboxswatch"}
-check(list(swatch_rows) == ["customQuestColor", "customRestedColor"], f"a swatch row for each ({list(swatch_rows)})")
+check(list(swatch_rows) == ["customQuestColor", "customRestedColor", "customTextColor"],
+      f"a swatch row for each ({list(swatch_rows)})")
 swatch = swatch_rows["customRestedColor"].frame.ColorSwatch
 seg = lambda which: [round(x, 3) for x in ns.Bar.main[which + "Tex"].vc.values()]
 numbers = lua.eval("function() local out for _, r in ipairs(__regions) do if r.kind == 'FontString' and r.text "
@@ -455,6 +456,36 @@ lua.execute("__settings.customRestedColor:SetValue(false); __settings.restedColo
 lua.execute("__settings.questColor:SetValue('ff00aa'); __settings.customQuestColor:SetValue(true)")
 check(seg("quest") == [1, 0, 0.667, 1] and "Completed: |cFFff00aa" in numbers(), f"quest colour too ({seg('quest')})")
 lua.execute("__settings.customQuestColor:SetValue(false); __settings.questColor:SetValue('')")
+# Every bar text in existence: both XP bars', the reputation bar's and the previews', whichever have been made.
+text_colours = lua.eval("""function(core)
+    local out = {}
+    for _, r in ipairs(__regions) do
+        if r.kind == 'FontString' and r.textColor then out[table.concat(r.textColor, ' ')] = true end
+    end
+    local keys = {}
+    for k in pairs(out) do keys[#keys + 1] = k end
+    return table.concat(keys, ', ')
+end""")
+text_swatch = swatch_rows["customTextColor"].frame.ColorSwatch
+check(text_colours() == "1 1 1 1" and list(text_swatch.shownColor.values()) == [1, 1, 1], "text is white until ticked")
+lua.execute("__settings.customTextColor:SetValue(true)")
+text_swatch.Click(text_swatch)
+check(text_colours() == "1 1 1 1" and lua.eval("__settings.textColor:GetValue()") == "",
+      "ticking it and opening the picker leaves it white")
+lua.execute("__pickColor(1, 1, 0)")
+check(text_colours() == "1 1 0 1" and list(text_swatch.shownColor.values()) == [1, 1, 0],
+      f"a picked colour is on every bar's text and the swatch ({text_colours()})")
+check("Rested: |cFF4F90FF" in numbers(), "the separate bar's rested number keeps its own")
+lua.execute("__settings.font:SetValue('GameFontNormalLarge'); __settings.height:SetValue(40)")
+check(text_colours() == "1 1 0 1", "it stays through a font and size change")
+lua.execute("__settings.font:SetValue('GameFontNormal'); __settings.height:SetValue(30)")
+lua.execute("__cancelColor()")
+check(text_colours() == "1 1 1 1" and lua.eval("__settings.textColor:GetValue()") == "", "Cancel: white again")
+lua.execute("__settings.textColor:SetValue('FFD100')")
+check(text_colours() != "1 1 1 1", "another colour")
+lua.execute("__settings.customTextColor:SetValue(false)")
+check(text_colours() == "1 1 1 1", "unticked: white, with the colour kept")
+lua.execute("__settings.textColor:SetValue('')")
 slash("test off", 2)
 
 print("== themes")
@@ -1393,7 +1424,7 @@ copy_dd = [i for i in lua2.eval("__settingsRows()").values() if i.kind == "dropd
 check(copy_dd and copy_dd[0].options[1].label == "No other characters yet", "copy list says when there is no one to copy")
 lua2.execute("SmoothExperienceBarDB.profiles['Alt - Mockrealm'] = { theme = 'frost', width = 640, glass = false, lightning = false, "
              "defaultCentre = 'xpHour', defaultRight = 'bogus', customRestedColor = true, restedColor = 'C0FFEE', "
-             "customQuestColor = 'yes', questColor = 'orange' }")
+             "customQuestColor = 'yes', questColor = 'orange', customTextColor = true, textColor = '#FFFFFF' }")
 lua2.execute("__settings.copyFrom:SetValue('Alt - Mockrealm')")
 button = [i for i in lua2.eval("__settingsRows()").values() if i.kind == "button" and i.name == "Copy Settings"]
 check(bool(button), "copy button on the settings page")
@@ -1404,7 +1435,7 @@ check(mine.theme == "frost" and mine.width == 640 and not mine.glass and not min
       "copying another character's profile replaces this character's settings")
 check(G2.SmoothExperienceBarFrame.w == 640, "copied size applied to the bar")
 check(mine.customRestedColor is True and mine.restedColor == "C0FFEE" and mine.customQuestColor is False
-      and mine.questColor == "", "copied colours kept, and ones that are not colours go back to the theme's")
+      and mine.questColor == "" and mine.customTextColor is True and mine.textColor == "", "copied colours kept, and ones that are not colours go back to the usual ones")
 check(mine.defaultCentre == "xpHour" and mine.defaultRight == "none",
       "copied text choices kept, and one the addon does not know goes back to the default")
 check(G2.__settings.theme.GetValue(G2.__settings.theme) == "frost", "settings page shows the copied values")
