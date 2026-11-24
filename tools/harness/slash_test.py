@@ -1379,12 +1379,12 @@ check(lua3.eval("SmoothExperienceBarSetup") is None
 check(any("Copied settings from Alt - Mockrealm" in m for m in G2.__chat.values()), "copy confirmed in chat")
 
 # Forever: characters have a surname and play under a ruleset, not a realm. Profiles saved before
-# surnames were keyed by first name and server name.
+# surnames were keyed by first name and server name; GetRealmName is blank there since build 71037.
 def forever_session(rules, setup=""):
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
     lua.execute("""
-        __player.name, __player.surname, __player.realm = 'Hotdog', 'Hootsman', 'CAMWOW AU1 Realm 1 PvE'
+        __player.name, __player.surname, __player.realm = 'Hotdog', 'Hootsman', ''
         Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = ' ' } }
         Enum = { GameRule = { PvPRuleset = 1, RPRuleset = 2, HardcoreRuleset = 3 } }
         __rules = {}
@@ -1424,6 +1424,22 @@ lua5 = forever_session([], """
 """)
 check(lua5.eval("__settings.copyFrom:GetValue()") == "Hollywood Hootsman - Normal",
       "copy choice starts on the first other character, not a value outside the list")
+# The old profile is found by first name alone while the realm is blank, only if that names one profile.
+TWO_HOTDOGS = "SmoothExperienceBarDB.profiles['Hotdog - Other Realm'] = { theme = 'frost' }"
+lua6 = forever_session([], TWO_HOTDOGS)
+check(lua6.eval("SmoothExperienceBarDB.profiles['Hotdog Hootsman - Normal'].theme") not in ("fel", "frost"),
+      "Forever: a blank realm does not pick between two old profiles with the same first name")
+lua7 = forever_session([], TWO_HOTDOGS + "; __player.realm = 'Other Realm'")
+check(lua7.eval("SmoothExperienceBarDB.profiles['Hotdog Hootsman - Normal'].theme") == "frost",
+      "Forever: a realm name, when there is one, picks the old profile")
+lua8 = forever_session([], "__player.name = 'Hot'")
+check(lua8.eval("SmoothExperienceBarDB.profiles['Hot Hootsman - Normal'].theme") != "fel",
+      "Forever: the old profile's whole first name has to match")
+lua9 = forever_session([], "SmoothExperienceBarDB.profiles['Hotdog Hootsman - Normal'] = { theme = 'frost' }")
+check(lua9.eval("SmoothExperienceBarDB.profiles['Hotdog Hootsman - Normal'].theme") == "frost",
+      "Forever: a character with its own profile keeps it")
+check(forever_session([], "C_GameRules = nil").eval("SmoothExperienceBarDB.profiles['Hotdog Hootsman - Unknown']") is not None,
+      "Forever: a blank realm is never part of the key")
 for rules, label in ((["PvPRuleset"], "PVP"), (["RPRuleset"], "RP"), (["RPRuleset", "PvPRuleset"], "RP-PVP"),
                      (["HardcoreRuleset"], "Hardcore")):
     key = "Hotdog Hootsman - " + label

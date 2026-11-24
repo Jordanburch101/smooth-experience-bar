@@ -1839,7 +1839,8 @@ function Core.AccountKnown()
 end
 
 -- Forever has no realms: names are unique across the region, and a character plays under a
--- ruleset. GetRealmName there gives a server name, so the ruleset names the character instead.
+-- ruleset. GetRealmName there gave a server name, and "" since build 71037, so the ruleset names the
+-- character instead.
 local function RulesetName()
     local active, rules = C_GameRules and C_GameRules.IsGameRuleActive, Enum and Enum.GameRule
     if not (active and rules) then return end
@@ -1852,16 +1853,32 @@ local function RulesetName()
     return "Normal"
 end
 
--- This character's key, and its key from before surnames when it has one (Forever).
+-- This character's key. With a surname (Forever), also what its key from before surnames starts with, and
+-- the realm that key ends with if the client still gives one.
 local function CharacterKeys()
     local name, surname = UnitName("player")
     name = name or "Unknown"
-    local realm = GetRealmName() or "Unknown"
-    local realmKey = name .. " - " .. realm
-    if type(surname) ~= "string" or surname == "" then return realmKey end
+    local realm = GetRealmName()
+    if realm == "" then realm = nil end
+    local prefix = name .. " - "
+    if type(surname) ~= "string" or surname == "" then return prefix .. (realm or "Unknown") end
     local consts = Constants and Constants.CharacterNameSeparatorConsts
     local sep = consts and consts.CHARACTERNAME_SURNAME_SEPARATOR or " "
-    return name .. sep .. surname .. " - " .. (RulesetName() or realm), realmKey
+    return name .. sep .. surname .. " - " .. (RulesetName() or realm or "Unknown"), prefix, realm
+end
+
+-- A character's profile from before surnames (Forever). Without a realm it is the one old profile with the
+-- character's first name; with several there is no telling which is theirs.
+local function OldProfile(prefix, realm)
+    if realm then return profiles[prefix .. realm] end
+    local found
+    for key in pairs(oldKeys) do
+        if profiles[key] and key:sub(1, #prefix) == prefix then
+            if found then return end
+            found = profiles[key]
+        end
+    end
+    return found
 end
 
 function Core.ProfileKey()
@@ -2083,20 +2100,20 @@ bar:SetScript("OnEvent", function(self, event, arg1, arg2)
         profiles = root.profiles
         for _, profile in pairs(profiles) do MigrateBars(profile) end
         if root.legacy then MigrateBars(root.legacy) end
-        local oldKey
-        profileKey, oldKey = CharacterKeys()
+        local oldPrefix, realm
+        profileKey, oldPrefix, realm = CharacterKeys()
         local newToAddon = not next(profiles) and not root.legacy
         account, accountKnown = root, not newToAddon
         -- Forever: profiles were keyed by first name and server before surnames. Note those keys once,
         -- to leave them off the copy list, and start each character from its old profile. They are
         -- kept, as two characters with the same first name shared one.
-        if oldKey then
+        if oldPrefix then
             if not root.oldKeys then
                 root.oldKeys = {}
                 for key in pairs(profiles) do root.oldKeys[key] = true end
             end
             oldKeys = root.oldKeys
-            local old = profiles[oldKey]
+            local old = OldProfile(oldPrefix, realm)
             if not profiles[profileKey] and old then
                 local profile = {}
                 for k, v in pairs(old) do profile[k] = CopyValue(v) end
